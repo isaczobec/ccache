@@ -1,10 +1,12 @@
 from dataclasses import dataclass, field
 import inspect
 from typing import Callable
-import sqlite3
+from computation_object_data import ComputationObjectData
 from computation_object_metadata import ComputationObjectMetadata
 import sqltypes as sqlt
 import os
+
+from db_manager import DBManager
 
 IS_SAVE_METHOD_FLAG = "_is_save_method"
 SAVE_METHOD_NAME = "save_method"
@@ -12,19 +14,11 @@ IS_LOAD_METHOD_FLAG = "_is_load_method"
 LOAD_METHOD_NAME = "load_method"
 METADATA_TUPLE_NAME = "metadata_tuple"
 
-@dataclass
-class ComputationObjectData:
-    cls: type
-    metadata: ComputationObjectMetadata = field(default_factory = lambda: ComputationObjectMetadata())
-    save_method: str = None
-    """Name of the method to save the object"""
-    load_method: str = None
-    """Name of the method to load the object"""
-
 class CacheEngine:
 
     _data_dir = ".ccache"
     _obj_dir = os.path.join(_data_dir,"objs")
+    _db_dir = os.path.join(_data_dir,"db")
 
     _current_computation_object_type: type = None
 
@@ -57,12 +51,15 @@ class CacheEngine:
         # create the computation object data object
         obj_data = ComputationObjectData(
             metadata=metadata,
-            cls = cls,
+            object_identifier=identifier,
+            cls=cls,
         )
 
         # Store the objects data and its identifier in the dicts
         CacheEngine._computation_object_dict[identifier] = obj_data
         CacheEngine._computation_object_type_to_identifier_dict[cls] = identifier
+
+        DBManager.create_computation_object_relation(identifier, obj_data)
 
         return obj_data
 
@@ -99,15 +96,14 @@ class CacheEngine:
             raise ValueError(f"the computattion object of type {type(obj)} did not have a save function defined!")
         check_saveload_func_signature(save_func) # verify correct signature
 
-        metadata = obj_data.metadata.compute_metadata(obj)
-        print(metadata)
-
-        filename = str(hash(obj))
-        path = os.path.join(CacheEngine._obj_dir,filename)
+        uid = str(hash(obj)) # TODO: this is not good
+        path = os.path.join(CacheEngine._obj_dir,uid)
         save_func(path)
 
+        DBManager.insert_computation_object(obj, uid, obj_data)
+
     @staticmethod
-    def _load_object(identifier_or_type: str | type, filename: str) -> any:
+    def _load_object(identifier_or_type: str | type, uid: str) -> any:
 
         # create a new instance of the object
         obj_data = CacheEngine._get_computation_object_data(identifier_or_type)
@@ -120,12 +116,13 @@ class CacheEngine:
         check_saveload_func_signature(load_func) # verify correct signature
 
         # load the object
-        path = os.path.join(CacheEngine._obj_dir,filename)
+        path = os.path.join(CacheEngine._obj_dir,uid)
         load_func(path)
         return new_obj
 
     @staticmethod
     def _initialize():
+        DBManager.initialize(CacheEngine._db_dir)
         pass
 
 def check_saveload_func_signature(func):
@@ -212,6 +209,10 @@ def computation_object(
         return c
     
     return class_wrapper
+
+# --- TEST CODE ---
+
+CacheEngine._initialize()
 
 @computation_object(
     "Testclass2",
