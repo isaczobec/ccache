@@ -10,6 +10,7 @@ IS_SAVE_METHOD_FLAG = "_is_save_method"
 SAVE_METHOD_NAME = "save_method"
 IS_LOAD_METHOD_FLAG = "_is_load_method"
 LOAD_METHOD_NAME = "load_method"
+METADATA_TUPLE_NAME = "metadata_tuple"
 
 @dataclass
 class ComputationObjectData:
@@ -42,7 +43,7 @@ class CacheEngine:
         cls: type,
         identifier: str,
         metadata: ComputationObjectMetadata = ComputationObjectMetadata(),
-        ):
+        ) -> ComputationObjectData:
 
         # check that cls is a type and that the identifier is unique 
         if not isinstance(cls, type):
@@ -62,6 +63,8 @@ class CacheEngine:
         # Store the objects data and its identifier in the dicts
         CacheEngine._computation_object_dict[identifier] = obj_data
         CacheEngine._computation_object_type_to_identifier_dict[cls] = identifier
+
+        return obj_data
 
     @staticmethod
     def _get_computation_object_data(identifier_or_type: str | type):
@@ -87,16 +90,19 @@ class CacheEngine:
         func(computation_object)
 
     @staticmethod
-    def _save_object(object):
-        obj_data = CacheEngine._get_computation_object_data(type(object))
+    def _save_object(obj):
+        obj_data = CacheEngine._get_computation_object_data(type(obj))
         
         # check that the object has a save method
-        save_func = getattr(object, obj_data.save_method, None)
+        save_func = getattr(obj, obj_data.save_method, None)
         if save_func is None:
-            raise ValueError(f"the computattion object of type {type(object)} did not have a save function defined!")
+            raise ValueError(f"the computattion object of type {type(obj)} did not have a save function defined!")
         check_saveload_func_signature(save_func) # verify correct signature
 
-        filename = str(hash(object))
+        metadata = obj_data.metadata.compute_metadata(obj)
+        print(metadata)
+
+        filename = str(hash(obj))
         path = os.path.join(CacheEngine._obj_dir,filename)
         save_func(path)
 
@@ -135,7 +141,7 @@ def save_method(func):
     check_saveload_func_signature(func)
     
     # flag that the method is a save method
-    func._is_save_method = True
+    setattr(func, IS_SAVE_METHOD_FLAG, True)
     return func
 
 def load_method(func):
@@ -143,8 +149,14 @@ def load_method(func):
     check_saveload_func_signature(func)
 
     # flag that the method is a save method
-    func._is_load_method = True
+    setattr(func, IS_LOAD_METHOD_FLAG, True)
     return func
+
+def metadata_setter(vals: tuple[str]):    
+    def func_wrapper(func):
+        setattr(func, METADATA_TUPLE_NAME, vals)
+        return func
+    return func_wrapper
 
 def computation_object(
         identifier: str,
@@ -174,13 +186,13 @@ def computation_object(
     """
 
     def class_wrapper(c):
-        CacheEngine._register_computation_object(
+        obj_data = CacheEngine._register_computation_object(
             cls=c, 
             identifier=identifier, 
             metadata=metadata)
         
-        # Check if save and load methods have been defined and set them
         for name, member in vars(c).items():
+            # Check if save and load methods have been defined and set them
             if getattr(member, IS_SAVE_METHOD_FLAG, False):
                 CacheEngine._modify_computation_object_data(
                     c, lambda dat, 
@@ -192,11 +204,22 @@ def computation_object(
                     load_method_name=name : setattr(dat, LOAD_METHOD_NAME, load_method_name)
                     )
 
+            # add metadata functions
+            metadata_tuple = getattr(member, METADATA_TUPLE_NAME, None)
+            if metadata_tuple is not None:
+                obj_data.metadata.add_metadata_function(name, metadata_tuple)
+
         return c
     
     return class_wrapper
 
-@computation_object("Testclass2")
+@computation_object(
+    "Testclass2",
+    metadata=ComputationObjectMetadata(
+        squaredVal = sqlt.INT,
+        cubedVal   = sqlt.INT,
+        )
+    )
 class TestClass2:
     def __init__(self, val):
         self.val = val
@@ -213,6 +236,16 @@ class TestClass2:
             print(f"path: {path}, val: {val}")
             self.val = int(val)
 
+    @metadata_setter(("squaredVal",))
+    def set_squaredVal(self):
+        sVal = self.val ** 2
+        return (sVal, )
+
+    @metadata_setter(("cubedVal",))
+    def set_cubedVal(self):
+        cVal = self.val ** 3
+        return (cVal, )
+
 @computation_object("testclass3")
 class TestClass3:
     def a(self, u):
@@ -224,8 +257,8 @@ class TestClass3:
             file.write("djasiodjsao")
 
 
-# u = TestClass2(87336)
-# CacheEngine._save_object(u)
+u = TestClass2(2)
+CacheEngine._save_object(u)
 
-u = CacheEngine._load_object(TestClass2, "8286946198929")
-print(u.val)
+# u = CacheEngine._load_object(TestClass2, "8286946198929")
+# print(u.val)
