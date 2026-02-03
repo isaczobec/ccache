@@ -3,6 +3,7 @@ import inspect
 from typing import Callable
 from computation_object_data import ComputationObjectData
 from computation_object_metadata import ComputationObjectMetadata
+from compute_function import In, Out, ComputationFunction
 import sqltypes as sqlt
 import os
 import uuid
@@ -32,6 +33,16 @@ class CacheEngine:
 
     _computation_object_type_to_identifier_dict: dict[type, str] = {}
     """dict that maps a type to its computation object identifier."""
+
+    _computation_function_dict: dict[str, ComputationFunction] = {}
+    """dict with for tracking computation functions. Populated in
+    `start()`."""
+
+    _computation_function_pre_dict: dict[str, tuple] = {}
+    """A dict for keeping track of which functions to turn
+    into `ComputationFunction` instances after all functions and
+    computation objects have been registered. has the form 
+    `func_name : (func, inputs: In, output: Out)`."""
 
     @staticmethod
     def _register_computation_object(
@@ -127,6 +138,55 @@ class CacheEngine:
         DBManager.initialize(CacheEngine._db_dir)
         pass
 
+    @staticmethod
+    def start():
+        # populate the computation function dict
+        for func_name, (func, inputs, output) in CacheEngine._computation_function_pre_dict.items():
+            # get all inputs computation object datas
+            input_datas = [CacheEngine._get_computation_object_data(in_type) for in_type in inputs.in_types]
+
+            output_data = CacheEngine._get_computation_object_data(output.out_type)
+
+            CacheEngine._computation_function_dict[func_name] = ComputationFunction(
+                func_name,
+                func,
+                input_datas,
+                output_data
+                )
+            
+    @staticmethod
+    def _register_compute_function(func: callable, inputs: In, output: Out):
+        func_name = func.__name__
+        if func_name in CacheEngine._computation_function_pre_dict:
+            raise KeyError(f"{func_name} already exists as a computation function, cannot create it again!")
+        CacheEngine._computation_function_pre_dict[func_name] = (func, inputs, output)
+
+    @staticmethod
+    def perform_computation_function(func_name: str, input_objects: list[any], normal_args: tuple):
+        comp_func = CacheEngine._computation_function_dict[func_name]
+
+        # if incorrect amount of arguments, throw an exception
+        if len(input_objects) != len(comp_func.inputs):
+            raise ValueError(f"Wrong amount of arguments for function {func_name}; excpected {len(comp_func.inputs)} but got {len(input_objects)}!")
+
+        # verify that the function was called with correct input arguments
+        for idx,inp_object in enumerate(input_objects):
+            obj_data = CacheEngine._get_computation_object_data(type(inp_object))
+
+            # if the object datas are not the same, throw an exception
+            if obj_data != comp_func.inputs[idx]:
+                raise ValueError(f"Wrong input type for function {func_name}; excpected {comp_func.inputs[idx].object_identifier} but got {obj_data.object_identifier}!")
+
+        # call the function
+        result_obj = comp_func.func(*input_objects, *normal_args)
+
+        # check that the result is a computation object with correct type
+        result_obj_data = CacheEngine._get_computation_object_data(type(result_obj))
+        if result_obj_data != comp_func.output:
+            raise ValueError(f"The type of the result of the function {func_name} was incorrect; excpected {comp_func.output.object_identifier} but got {result_obj_data.object_identifier}!")
+
+        return result_obj
+
 def check_saveload_func_signature(func):
     # verify that the method signature is correct
     sig = inspect.signature(func)
@@ -212,6 +272,12 @@ def computation_object(
     
     return class_wrapper
 
+def computation_function(inputs: In, output: Out):
+    def wrapper(func):
+        CacheEngine._register_compute_function(func, inputs, output)
+        return func    
+    return wrapper
+
 # --- TEST CODE ---
 
 CacheEngine._initialize()
@@ -221,6 +287,7 @@ CacheEngine._initialize()
     metadata=ComputationObjectMetadata(
         squaredVal = sqlt.INT,
         cubedVal   = sqlt.INT,
+        name       = sqlt.TEXT,
         )
     )
 class TestClass2:
@@ -265,5 +332,27 @@ CacheEngine._save_object(u)
 
 # u = CacheEngine._load_object(TestClass2, "8286946198929")
 # print(u.val)
+
+
+def test_computation_function():
+    """Register a simple computation function, start the engine and
+    evaluate it using :meth:`CacheEngine.perform_computation_function`.
+    """
+    @computation_function(In("Testclass2"), Out("Testclass2"))
+    def square_value(x: TestClass2, y) -> TestClass2:
+        return TestClass2(x.val * x.val + y)
+
+    # build ComputationFunction objects
+    CacheEngine.start()
+
+    inp = TestClass2(4)
+    out = CacheEngine.perform_computation_function("square_value", [inp], (1,))
+    print("computation function returned object with val=", out.val)
+    assert isinstance(out, TestClass2) and out.val == 17
+    print("test_computation_function passed")
+
+
+# run the test
+test_computation_function()
 
 DBManager.test()
