@@ -5,6 +5,7 @@ from computation_object_data import ComputationObjectData
 from computation_object_metadata import ComputationObjectMetadata
 import sqltypes as sqlt
 import os
+import uuid
 
 from db_manager import DBManager
 
@@ -96,7 +97,8 @@ class CacheEngine:
             raise ValueError(f"the computattion object of type {type(obj)} did not have a save function defined!")
         check_saveload_func_signature(save_func) # verify correct signature
 
-        uid = str(hash(obj)) # TODO: this is not good
+        # uid = str(hash(obj)) # TODO: this is not good
+        uid = str(uuid.uuid4())
         path = os.path.join(CacheEngine._obj_dir,uid)
         save_func(path)
 
@@ -258,8 +260,10 @@ class TestClass3:
             file.write("djasiodjsao")
 
 
-u = TestClass2(2)
+u = TestClass2(3)
 CacheEngine._save_object(u)
 
 # u = CacheEngine._load_object(TestClass2, "8286946198929")
 # print(u.val)
+
+DBManager.test()
