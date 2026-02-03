@@ -39,16 +39,19 @@ class DBManager:
         conn.execute("PRAGMA foreign_keys = ON;")
 
         # create a table for keeping track of relations
-        # conn.execute("""
-        # CREATE TABLE IF NOT EXISTS metadata_relations (
-
-        # )
-        # """)
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS relations (
+            relation_name TEXT PRIMARY KEY,
+            computation_object_name TEXT,
+            metadata_str_rep TEXT,
+            creation_date DATETIME DEFAULT (CURRENT_TIMESTAMP)
+        )
+        """)
 
         DBManager.conn = conn
     
     @staticmethod
-    def _relation_table_name(object_identifier: str, object_data: ComputationObjectData | None = None) -> str:
+    def _relation_table_name(object_identifier: str, object_data: ComputationObjectData) -> str:
         """Construct a safe table name for a computation object relation.
 
         If ``object_data`` is provided, append an 8-character (hex) deterministic
@@ -57,18 +60,7 @@ class DBManager:
         """
         # sanitize identifier to safe table name: allow letters, digits and underscore
         safe = re.sub(r"\W+", "_", object_identifier)
-
-        if object_data is None:
-            return f"{COMPUTATION_OBJECT_RELATION_PREFIX}{safe}"
-
-        meta_items = object_data.metadata.get_metadata_items()
-        if not meta_items:
-            return f"{COMPUTATION_OBJECT_RELATION_PREFIX}{safe}"
-
-        # build a deterministic representation of metadata items
-        parts = [f"{k}:{v}" for k, v in sorted(meta_items.items())]
-        joined = ";".join(parts)
-        digest = hashlib.sha256(joined.encode("utf-8")).hexdigest()[:8]
+        digest = hashlib.sha256(object_data.metadata.get_string_representation().encode("utf-8")).hexdigest()[:8]
 
         return f"{COMPUTATION_OBJECT_RELATION_PREFIX}{safe}_{digest}"
 
@@ -77,16 +69,63 @@ class DBManager:
         if DBManager.conn is None:
             raise RuntimeError("DBManager.initialize must be called before creating relations")
 
-        table = DBManager._relation_table_name(object_identifier, object_data)
+        # Check most-recent relation for this computation object identifier
+        cur = DBManager.conn.execute(
+            "SELECT relation_name, metadata_str_rep FROM relations WHERE computation_object_name = ? ORDER BY creation_date DESC LIMIT 1",
+            (object_identifier,)
+        )
+        row = cur.fetchone()
+
+        new_meta_items = object_data.metadata.get_metadata_items()
+
+        if row is not None:
+            old_meta_str = row["metadata_str_rep"] if row["metadata_str_rep"] is not None else ""
+            try:
+                from computation_object_metadata import ComputationObjectMetadata
+                old_meta = ComputationObjectMetadata.string_representation_to_metadata_dict(old_meta_str) if old_meta_str else {}
+            except Exception:
+                old_meta = {}
+
+            old_keys = set(old_meta.keys())
+            new_keys = set(new_meta_items.keys())
+
+            # If new metadata is a (proper or equal) superset of the old one,
+            # alter the existing table to add missing columns and update the
+            # stored metadata representation.
+            if new_keys.issuperset(old_keys):
+                missing = sorted(new_keys - old_keys)
+                if missing:
+                    table_name = row["relation_name"]
+                    for col in missing:
+                        col_type = new_meta_items[col]
+                        DBManager.conn.execute(f'ALTER TABLE "{table_name}" ADD COLUMN "{col}" {col_type};')
+
+                    # update metadata_str_rep and bump creation_date to now
+                    DBManager.conn.execute(
+                        "UPDATE relations SET metadata_str_rep = ?, creation_date = CURRENT_TIMESTAMP WHERE relation_name = ?",
+                        (object_data.metadata.get_string_representation(), table_name),
+                    )
+                    DBManager.conn.commit()
+                return row["relation_name"]
+
+        # Otherwise create a new relation table (schema changed incompatibly)
+        table_name = DBManager._relation_table_name(object_identifier, object_data)
 
         cols = ["uid TEXT PRIMARY KEY"]
-        # object_data.metadata.get_metadata_items expected to return dict[varname, sqltype]
-        for varname, sql_type in object_data.metadata.get_metadata_items().items():
-            cols.append(f"{varname} {sql_type}")
+        for varname, sql_type in new_meta_items.items():
+            cols.append(f'"{varname}" {sql_type}')
 
-        sql_stmt = f'CREATE TABLE IF NOT EXISTS "{table}" ({", ".join(cols)});'
+        sql_stmt = f'CREATE TABLE IF NOT EXISTS "{table_name}" ({", ".join(cols)});'
         DBManager.conn.execute(sql_stmt)
+
+        # Insert or replace relation entry with current metadata string
+        DBManager.conn.execute(
+            "INSERT OR REPLACE INTO relations (relation_name, computation_object_name, metadata_str_rep) VALUES (?, ?, ?);",
+            (table_name, object_identifier, object_data.metadata.get_string_representation()),
+        )
+
         DBManager.conn.commit()
+        return table_name
 
     @staticmethod
     def insert_computation_object(obj: any, uid: str, object_data: ComputationObjectData):

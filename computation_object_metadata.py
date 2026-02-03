@@ -16,6 +16,15 @@ class ComputationObjectMetadata():
 
     def get_metadata_items(self):
         return self._metadata_items
+    
+    def get_string_representation(self) -> str:
+        parts = [f"{k}:{v}" for k, v in sorted(self._metadata_items.items())]
+        joined = ";".join(parts)
+        return joined
+    
+    @staticmethod
+    def string_representation_to_metadata_dict(string_rep: str):
+        return {k : v for k, v in [u.split(":") for u in string_rep.split(";")]}
 
     def add_metadata_function(self, funcname: str, varnames: tuple[str]):
 
