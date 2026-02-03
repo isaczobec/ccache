@@ -4,6 +4,7 @@ from typing import Callable
 import sqlite3
 from computation_object_metadata import ComputationObjectMetadata
 import sqltypes as sqlt
+import os
 
 IS_SAVE_METHOD_FLAG = "_is_save_method"
 SAVE_METHOD_NAME = "save_method"
@@ -20,6 +21,9 @@ class ComputationObjectData:
     """Name of the method to load the object"""
 
 class CacheEngine:
+
+    _data_dir = ".ccache"
+    _obj_dir = os.path.join(_data_dir,"objs")
 
     _current_computation_object_type: type = None
 
@@ -50,13 +54,13 @@ class CacheEngine:
         CacheEngine._current_computation_object_type = cls
 
         # create the computation object data object
-        objData = ComputationObjectData(
+        obj_data = ComputationObjectData(
             metadata=metadata,
             cls = cls,
         )
 
         # Store the objects data and its identifier in the dicts
-        CacheEngine._computation_object_dict[identifier] = objData
+        CacheEngine._computation_object_dict[identifier] = obj_data
         CacheEngine._computation_object_type_to_identifier_dict[cls] = identifier
 
     @staticmethod
@@ -93,8 +97,26 @@ class CacheEngine:
         check_saveload_func_signature(save_func) # verify correct signature
 
         filename = str(hash(object))
-        save_func(filename)
+        path = os.path.join(CacheEngine._obj_dir,filename)
+        save_func(path)
 
+    @staticmethod
+    def _load_object(identifier_or_type: str | type, filename: str) -> any:
+
+        # create a new instance of the object
+        obj_data = CacheEngine._get_computation_object_data(identifier_or_type)
+        new_obj = object.__new__(obj_data.cls)
+
+        # check that the object has a load method
+        load_func = getattr(new_obj, obj_data.load_method, None)
+        if load_func is None:
+            raise ValueError(f"the computattion object of type {type(new_obj)} did not have a load function defined!")
+        check_saveload_func_signature(load_func) # verify correct signature
+
+        # load the object
+        path = os.path.join(CacheEngine._obj_dir,filename)
+        load_func(path)
+        return new_obj
 
     @staticmethod
     def _initialize():
@@ -174,15 +196,22 @@ def computation_object(
     
     return class_wrapper
 
-@computation_object("asdssddfa")
+@computation_object("Testclass2")
 class TestClass2:
-    def a(self, u):
-        print (u)
-
+    def __init__(self, val):
+        self.val = val
+    
     @save_method
     def save(self, path):
         with open(path, "w") as file:
-            file.write("DSOAHDUSHAUDO")
+            file.write(str(self.val))
+
+    @load_method
+    def load(self, path):
+        with open(path, "r") as file:
+            val = file.read()
+            print(f"path: {path}, val: {val}")
+            self.val = int(val)
 
 @computation_object("testclass3")
 class TestClass3:
@@ -195,8 +224,8 @@ class TestClass3:
             file.write("djasiodjsao")
 
 
-u = TestClass2()
-CacheEngine._save_object(u)
+# u = TestClass2(87336)
+# CacheEngine._save_object(u)
 
-u = TestClass3()
-CacheEngine._save_object(u)
+u = CacheEngine._load_object(TestClass2, "8286946198929")
+print(u.val)
