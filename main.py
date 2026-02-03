@@ -71,7 +71,7 @@ class CacheEngine:
         CacheEngine._computation_object_dict[identifier] = obj_data
         CacheEngine._computation_object_type_to_identifier_dict[cls] = identifier
 
-        DBManager.create_computation_object_relation(identifier, obj_data)
+        DBManager.get_or_create_computation_object_relation(identifier, obj_data)
 
         return obj_data
 
@@ -288,6 +288,8 @@ CacheEngine._initialize()
         squaredVal = sqlt.INT,
         cubedVal   = sqlt.INT,
         name       = sqlt.TEXT,
+        extradata  = sqlt.BOOLEAN,
+        extraextradata  = sqlt.BOOLEAN,
         )
     )
 class TestClass2:
@@ -327,7 +329,7 @@ class TestClass3:
             file.write("djasiodjsao")
 
 
-u = TestClass2(3)
+u = TestClass2(4)
 CacheEngine._save_object(u)
 
 # u = CacheEngine._load_object(TestClass2, "8286946198929")
