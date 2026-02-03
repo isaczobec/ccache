@@ -355,4 +355,13 @@ def test_computation_function():
 # run the test
 test_computation_function()
 
-DBManager.test()
+cur = DBManager.conn.execute(
+    f"""
+    SELECT * FROM {DBManager._relation_table_name("Testclass2", CacheEngine._get_computation_object_data(TestClass2))}; 
+    """
+    )
+DBManager.conn.commit()
+for row in cur:
+    # print(dict(row))     # convert to dict for pretty printing
+    # or show formatted:
+    print(', '.join(f"{k}={row[k]}" for k in row.keys()))

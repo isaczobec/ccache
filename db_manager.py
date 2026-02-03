@@ -1,13 +1,14 @@
 import sqlite3 as sql
 import os
 import re
+import hashlib
 from typing import Optional
 
 from computation_object_data import ComputationObjectData
 
 # Some copilot help
 
-COMPUTATION_OBJECT_RELATION_PREFIX = "computation_object_"
+COMPUTATION_OBJECT_RELATION_PREFIX = "co_"
 
 class DBManager:
 
@@ -36,21 +37,47 @@ class DBManager:
 
         # Enable common pragmas
         conn.execute("PRAGMA foreign_keys = ON;")
-        
+
+        # create a table for keeping track of relations
+        # conn.execute("""
+        # CREATE TABLE IF NOT EXISTS metadata_relations (
+
+        # )
+        # """)
+
         DBManager.conn = conn
     
     @staticmethod
-    def _relation_table_name(object_identifier: str) -> str:
+    def _relation_table_name(object_identifier: str, object_data: ComputationObjectData | None = None) -> str:
+        """Construct a safe table name for a computation object relation.
+
+        If ``object_data`` is provided, append an 8-character (hex) deterministic
+        hash computed from the sorted metadata name:type pairs to the table name.
+        This ensures table names change when the metadata schema changes.
+        """
         # sanitize identifier to safe table name: allow letters, digits and underscore
         safe = re.sub(r"\W+", "_", object_identifier)
-        return f"{COMPUTATION_OBJECT_RELATION_PREFIX}{safe}"
+
+        if object_data is None:
+            return f"{COMPUTATION_OBJECT_RELATION_PREFIX}{safe}"
+
+        meta_items = object_data.metadata.get_metadata_items()
+        if not meta_items:
+            return f"{COMPUTATION_OBJECT_RELATION_PREFIX}{safe}"
+
+        # build a deterministic representation of metadata items
+        parts = [f"{k}:{v}" for k, v in sorted(meta_items.items())]
+        joined = ";".join(parts)
+        digest = hashlib.sha256(joined.encode("utf-8")).hexdigest()[:8]
+
+        return f"{COMPUTATION_OBJECT_RELATION_PREFIX}{safe}_{digest}"
 
     @staticmethod
     def create_computation_object_relation(object_identifier: str, object_data: ComputationObjectData):
         if DBManager.conn is None:
             raise RuntimeError("DBManager.initialize must be called before creating relations")
 
-        table = DBManager._relation_table_name(object_identifier)
+        table = DBManager._relation_table_name(object_identifier, object_data)
 
         cols = ["uid TEXT PRIMARY KEY"]
         # object_data.metadata.get_metadata_items expected to return dict[varname, sqltype]
@@ -72,10 +99,10 @@ class DBManager:
         if DBManager.conn is None:
             raise RuntimeError("DBManager.initialize must be called before inserting objects")
 
-        table = DBManager._relation_table_name(object_data.object_identifier)
-
         # ensure table exists (schema derived from metadata description)
-        DBManager.create_computation_object_relation(table.replace(COMPUTATION_OBJECT_RELATION_PREFIX, ""), object_data)
+        DBManager.create_computation_object_relation(object_data.object_identifier, object_data)
+
+        table = DBManager._relation_table_name(object_data.object_identifier, object_data)
 
         # compute the metadata values
         metadata = object_data.metadata.compute_metadata(obj)
@@ -87,16 +114,3 @@ class DBManager:
         params = [uid] + [metadata[k] for k in metadata.keys()]
         DBManager.conn.execute(sql_stmt, params)
         DBManager.conn.commit()
-
-    @staticmethod
-    def test():
-        cur = DBManager.conn.execute(
-            f"""
-            SELECT * FROM {DBManager._relation_table_name("Testclass2")}; 
-            """
-            )
-        DBManager.conn.commit()
-        for row in cur:
-            # print(dict(row))     # convert to dict for pretty printing
-            # or show formatted:
-            print(', '.join(f"{k}={row[k]}" for k in row.keys()))
