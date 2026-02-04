@@ -53,6 +53,16 @@ class DBManager:
         )
         """)
 
+        # create a table for data about the computation objects
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS computation_objects (
+            uid TEXT PRIMARY KEY,
+            co_identifier TEXT,
+            timestamp DATETIME DEFAULT (CURRENT_TIMESTAMP),
+            orig_metadata_hash TEXT
+        )
+        """)
+
         DBManager.conn = conn
     
     @staticmethod
@@ -181,14 +191,22 @@ class DBManager:
         # metadata is expected to be a dict varname->value
         cols = ["uid"] + list(metadata.keys())
         placeholders = ",".join(["?"] * len(cols))
-        sql_stmt = f'INSERT INTO "{relation_name}" ({",".join(cols)}) VALUES ({placeholders})'
+        stmt = f'INSERT INTO "{relation_name}" ({",".join(cols)}) VALUES ({placeholders})'
 
         params = [uid] + [metadata[k] for k in metadata.keys()]
-        DBManager.conn.execute(sql_stmt, params)
+        DBManager.conn.execute(stmt, params)
+
+        # insert into the table tracking computation objects
+        co_stmt = f"""
+        INSERT INTO computation_objects(uid, co_identifier, orig_metadata_hash)
+        VALUES (?, ?, ?)
+        """
+        DBManager.conn.execute(co_stmt, (uid, object_data.object_identifier, DBManager._get_metadata_hash(object_data.metadata)))
+
         DBManager.conn.commit()
 
     @staticmethod 
-    def _resolve_query(query: str):
+    def _resolve_query(query: str, remove_semicolons: bool = False):
         
         resolved_query = query
         matches = re.findall(r":[A-Za-z0-9]+", query)
@@ -212,6 +230,9 @@ class DBManager:
                 print(rel_name)
                 resolved_query = resolved_query.replace(m, rel_name)
 
+        if remove_semicolons:
+            resolved_query = resolved_query.replace(";","")
+    
         return resolved_query
 
     @staticmethod
@@ -224,7 +245,36 @@ class DBManager:
         print(res_query)
         cur = DBManager.conn.execute(res_query)
         DBManager.conn.commit()
-        return cur.fetchall()
+        res = cur.fetchall()
+
+        if res is None: return []
+        return res
+    
+    @staticmethod
+    def get_uids_and_co_ids(query: str): # Chatgpt generated
+        """
+        Returns a list of (uid, co_identifier) tuples.
+        """
+        if DBManager.conn is None:
+            raise RuntimeError("DBManager.initialize must be called first")
+
+        resolved_query = DBManager._resolve_query(query, remove_semicolons=True)
+
+        stmt = f"""
+        SELECT q.uid, co.co_identifier
+        FROM (
+            {resolved_query}
+        ) AS q
+        JOIN computation_objects AS co
+        ON q.uid = co.uid
+        ;
+        """
+
+        cur = DBManager.conn.execute(stmt)
+        rows = cur.fetchall()
+
+        return [(r["uid"], r["co_identifier"]) for r in rows]
+
 
     @staticmethod
     def print_most_recent_rows(object_data: ComputationObjectData):
