@@ -323,4 +323,6 @@ CacheEngine._save_object(u)
 # u = CacheEngine._load_object(TestClass2, "8286946198929")
 # print(u.val)
 
-DBManager.print_most_recent_rows(CacheEngine._get_computation_object_data(TestClass2))
+# DBManager.print_most_recent_rows(CacheEngine._get_computation_object_data(TestClass2))
+
+print(DBManager.query("SELECT * FROM :Testclass2;"))

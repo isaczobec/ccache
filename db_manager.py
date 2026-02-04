@@ -187,6 +187,45 @@ class DBManager:
         DBManager.conn.execute(sql_stmt, params)
         DBManager.conn.commit()
 
+    @staticmethod 
+    def _resolve_query(query: str):
+        
+        resolved_query = query
+        matches = re.findall(r":[A-Za-z0-9]+", query)
+        for m in matches:
+            print(m)
+
+            # see if the match is a relation name
+            identifier = m[1:]
+            stmt = f"""
+                SELECT relation_name FROM relations
+                WHERE co_identifier = ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+                ; 
+            """
+            cur = DBManager.conn.execute(stmt, (identifier, ))
+            res = cur.fetchone()
+            print(res)
+            if res is not None:
+                rel_name = res["relation_name"]
+                print(rel_name)
+                resolved_query = resolved_query.replace(m, rel_name)
+
+        return resolved_query
+
+    @staticmethod
+    def query(query: str):
+        """
+        performs a query.
+        Words prefixed by ":" are replaced.
+        """
+        res_query = DBManager._resolve_query(query)
+        print(res_query)
+        cur = DBManager.conn.execute(res_query)
+        DBManager.conn.commit()
+        return cur.fetchall()
+
     @staticmethod
     def print_most_recent_rows(object_data: ComputationObjectData):
         if DBManager.conn is None:
