@@ -71,8 +71,6 @@ class CacheEngine:
         CacheEngine._computation_object_dict[identifier] = obj_data
         CacheEngine._computation_object_type_to_identifier_dict[cls] = identifier
 
-        DBManager.get_or_create_computation_object_relation(identifier, obj_data)
-
         return obj_data
 
     @staticmethod
