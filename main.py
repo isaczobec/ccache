@@ -285,9 +285,9 @@ CacheEngine._initialize()
     metadata=ComputationObjectMetadata(
         squaredVal = sqlt.INT,
         cubedVal   = sqlt.INT,
-        name       = sqlt.TEXT,
-        extradata  = sqlt.BOOLEAN,
-        extraextradata  = sqlt.BOOLEAN,
+        # name       = sqlt.TEXT,
+        # extradata  = sqlt.BOOLEAN,
+        # extraextradata  = sqlt.BOOLEAN,
         )
     )
 class TestClass2:
@@ -316,16 +316,6 @@ class TestClass2:
         cVal = self.val ** 3
         return (cVal, )
 
-@computation_object("testclass3")
-class TestClass3:
-    def a(self, u):
-        print (u)
-
-    @save_method
-    def save(self, path):
-        with open(path, "w") as file:
-            file.write("djasiodjsao")
-
 
 u = TestClass2(4)
 CacheEngine._save_object(u)
@@ -333,35 +323,4 @@ CacheEngine._save_object(u)
 # u = CacheEngine._load_object(TestClass2, "8286946198929")
 # print(u.val)
 
-
-def test_computation_function():
-    """Register a simple computation function, start the engine and
-    evaluate it using :meth:`CacheEngine.perform_computation_function`.
-    """
-    @computation_function(In("Testclass2"), Out("Testclass2"))
-    def square_value(x: TestClass2, y) -> TestClass2:
-        return TestClass2(x.val * x.val + y)
-
-    # build ComputationFunction objects
-    CacheEngine.start()
-
-    inp = TestClass2(4)
-    out = CacheEngine.perform_computation_function("square_value", [inp], (1,))
-    print("computation function returned object with val=", out.val)
-    assert isinstance(out, TestClass2) and out.val == 17
-    print("test_computation_function passed")
-
-
-# run the test
-test_computation_function()
-
-cur = DBManager.conn.execute(
-    f"""
-    SELECT * FROM {DBManager._relation_table_name("Testclass2", CacheEngine._get_computation_object_data(TestClass2))}; 
-    """
-    )
-DBManager.conn.commit()
-for row in cur:
-    # print(dict(row))     # convert to dict for pretty printing
-    # or show formatted:
-    print(', '.join(f"{k}={row[k]}" for k in row.keys()))
+DBManager.print_most_recent_rows(CacheEngine._get_computation_object_data(TestClass2))

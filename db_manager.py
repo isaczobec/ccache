@@ -44,9 +44,9 @@ class DBManager:
         # create a table for keeping track of relations
         conn.execute("""
         CREATE TABLE IF NOT EXISTS relations (
-            relation_id INTEGER PRIMARY KEY AUTOINCREMENT
+            relation_id INTEGER PRIMARY KEY AUTOINCREMENT,
             relation_name TEXT,
-            timestamp DATETIME DEFAULT (CURRENT_TIMESTAMP)
+            timestamp DATETIME DEFAULT (CURRENT_TIMESTAMP),
             co_identifier TEXT,
             metadata_rep TEXT,
             metadata_hash TEXT
@@ -86,17 +86,19 @@ class DBManager:
         # get the overlap between old and new fields, copy over those
         old_meta_vars = ComputationObjectMetadata.string_representation_to_metadata_dict(rel["metadata_rep"])
         new_meta_vars = object_data.metadata.get_metadata_items()
-        overlap_vars = set(old_meta_vars.keys()) & set(new_meta_vars.keys())
+        overlap_vars = list(set(old_meta_vars.keys()) & set(new_meta_vars.keys()))
 
-        select_exprs = [f"CAST({var} AS {new_meta_vars[var]}) AS {var}" for var in overlap_vars]
+        select_exprs = ["uid"] + [f"CAST({var} AS {new_meta_vars[var]}) AS {var}" for var in overlap_vars]
+        overlap_vars = ["uid"] + overlap_vars # add uid
 
         # query the overlapping values
         copy_stmt = f"""
         INSERT INTO {new_relation_name} ({", ".join(str(v) for v in overlap_vars)})
-        SELECT {", ".join(select_exprs)} FROM {rel["relation_name"]}
+        SELECT {", ".join(select_exprs)}
         FROM {rel["relation_name"]}
         ;
         """
+        print(copy_stmt)
         DBManager.conn.execute(copy_stmt)
         DBManager.conn.commit()
 
@@ -153,7 +155,7 @@ class DBManager:
         if row is not None:
             relation_name = DBManager._reconcile_relation(row["relation_id"], object_data)
         else:
-            relation_name = DBManager._create_relation_name(object_data)
+            relation_name = DBManager._create_co_relation(object_data)
 
         return relation_name
             
@@ -172,7 +174,7 @@ class DBManager:
             raise RuntimeError("DBManager.initialize must be called before inserting objects")
 
         # ensure table exists (schema derived from metadata description)
-        relation_name = DBManager._get_co_relation(object_data.object_identifier, object_data)
+        relation_name = DBManager._get_co_relation(object_data)
 
         # compute the metadata values
         metadata = object_data.metadata.compute_metadata(obj)
@@ -184,3 +186,46 @@ class DBManager:
         params = [uid] + [metadata[k] for k in metadata.keys()]
         DBManager.conn.execute(sql_stmt, params)
         DBManager.conn.commit()
+
+    @staticmethod
+    def print_most_recent_rows(object_data: ComputationObjectData):
+        if DBManager.conn is None:
+            raise RuntimeError("DBManager.initialize must be called first")
+
+        # find most recent relation for this computation object
+        cur = DBManager.conn.execute(
+            """
+            SELECT relation_name
+            FROM relations
+            WHERE co_identifier = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+            """,
+            (object_data.object_identifier,)
+        )
+        row = cur.fetchone()
+
+        if row is None:
+            print("No relation found for computation object")
+            return
+
+        relation_name = row["relation_name"]
+
+        # fetch all rows
+        cur = DBManager.conn.execute(f'SELECT * FROM "{relation_name}"')
+        rows = cur.fetchall()
+
+        if not rows:
+            print(f"Table '{relation_name}' is empty")
+            return
+
+        # print header
+        columns = rows[0].keys()
+        print(f"Table: {relation_name}")
+        print(" | ".join(columns))
+        print("-" * (len(columns) * 12))
+
+        # print rows
+        for r in rows:
+            print(" | ".join(str(r[c]) for c in columns))
+
