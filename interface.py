@@ -1,7 +1,13 @@
+# some refactoring help by chatgpt
+
 import abc
 import re
 from dataclasses import dataclass
+import shlex
 from typing import Callable, Any
+from computation_object_refs import CoVars
+from db_manager import DBManager
+from cache_engine import *
 
 ARGTYPE_POS   = 1
 ARGTYPE_KW    = 2
@@ -15,7 +21,6 @@ class ArgInfo:
     info_str: str
     preprocess_func: Callable[[Any], Any] = lambda x: x
 
-
 class Command(abc.ABC):
     def __init__(self):
         self.all_args: dict[str, ArgInfo] = {}
@@ -26,17 +31,15 @@ class Command(abc.ABC):
         kw_args: dict[str, list[str]] = {}
         flag_args: set[str] = set()
 
-        tokens = args_str.split()
+        tokens = shlex.split(args_str)
 
         pos_args: list[str] = []
         i = 0
 
-        # collect positional args (until first flag/kw)
         while i < len(tokens) and not tokens[i].startswith("-"):
             pos_args.append(tokens[i])
             i += 1
 
-        # parse flags and keywords
         while i < len(tokens):
             token = tokens[i]
             name = token.lstrip("-")
@@ -64,6 +67,7 @@ class Command(abc.ABC):
                 return None
 
         return pos_args, kw_args, flag_args
+
 
     @abc.abstractmethod
     def initialize(self):
@@ -101,8 +105,80 @@ class Command(abc.ABC):
     def _execute_logic(self, pos_args: list, kw_args: dict, flag_args: set):
         pass
 
+class SetCommand(Command):
+    def initialize(self):
+        self.register_argument(ArgInfo(
+            "varname",
+            ARGTYPE_POS,
+            'the varname to store a result in.'
+        ))
+        self.register_argument(ArgInfo(
+            "query",
+            ARGTYPE_KW,
+            'the query to execute. Escape in quotes ("").'
+        ))
+        self.register_argument(ArgInfo(
+            "var",
+            ARGTYPE_KW,
+            'To rename a var to another var.'
+        ))
 
-class PrintCommand(Command):
+    def _execute_logic(self, pos_args, kw_args, flag_args):
+        varname = pos_args[0]
+
+        if "query" in kw_args:
+            query = kw_args["query"][0]
+            ucs = DBManager.get_uids_and_co_ids(query)
+            objs = [CacheEngine.load_object(uc[1], uc[0]) for uc in ucs]
+            CoVars.add_co_ref(varname, objs)
+            return
+        
+        if "var" in kw_args:
+            var = kw_args["var"][0]
+            ref = CoVars.get_co_ref(var)
+            if ref is None:
+                CacheInterface.error(f"The variable {var} did not exist!")
+                return
+            CoVars.add_co_ref(var, ref.data)
+
+class SetCommand(Command):
+    def initialize(self):
+        self.register_argument(ArgInfo(
+            "varname",
+            ARGTYPE_POS,
+            'the varname to store a result in.'
+        ))
+        self.register_argument(ArgInfo(
+            "query",
+            ARGTYPE_KW,
+            'the query to execute. Escape in quotes ("").'
+        ))
+        self.register_argument(ArgInfo(
+            "var",
+            ARGTYPE_KW,
+            'To rename a var to another var.'
+        ))
+
+    def _execute_logic(self, pos_args, kw_args, flag_args):
+        varname = pos_args[0]
+
+        if "query" in kw_args:
+            query = kw_args["query"][0]
+            ucs = DBManager.get_uids_and_co_ids(query)
+            objs = [CacheEngine.load_object(uc[1], uc[0]) for uc in ucs]
+            CoVars.add_co_ref(varname, objs)
+            return
+        
+        if "var" in kw_args:
+            var = kw_args["var"][0]
+            ref = CoVars.get_co_ref(var)
+            if ref is None:
+                CacheInterface.error(f"The variable {var} did not exist!")
+                return
+            CoVars.add_co_ref(var, ref.data)
+
+
+class ExecCommand(Command):
     def initialize(self):
         self.register_argument(ArgInfo(
             "printval",
@@ -110,14 +186,9 @@ class PrintCommand(Command):
             "value to print"
         ))
         self.register_argument(ArgInfo(
-            "capital",
-            ARGTYPE_FLAG,
-            "capitalize output"
-        ))
-        self.register_argument(ArgInfo(
-            "appendafter",
+            "in",
             ARGTYPE_KW,
-            "append values"
+            "Variables to pass to the function"
         ))
 
     def _execute_logic(self, pos_args, kw_args, flag_args):
@@ -131,13 +202,11 @@ class PrintCommand(Command):
 
         print(msg)
 
-
 @dataclass
 class CommandInfo:
     command_name: str
     command_instance: Command
     command_desc: str
-
 
 class CacheInterface:
     CURSOR_SYMBOL = "ccache> "
@@ -172,6 +241,7 @@ class CacheInterface:
                 CacheInterface.commands[comm].command_instance.execute(args_str)
             except Exception as e:
                 print("Exception:", e)
+                raise e
 
 
 CacheInterface.register_command(CommandInfo(
@@ -179,5 +249,50 @@ CacheInterface.register_command(CommandInfo(
     PrintCommand(),
     "prints a value"
 ))
+CacheInterface.register_command(CommandInfo(
+    "set",
+    SetCommand(),
+    "sets a value."
+))
+
+CacheEngine._initialize()
+
+
+@computation_object(
+    "Testclass2",
+    metadata=ComputationObjectMetadata(
+        squaredVal = sqlt.INT,
+        cubedVal   = sqlt.INT,
+        # name       = sqlt.TEXT,
+        # extradata  = sqlt.BOOLEAN,
+        # extraextradata  = sqlt.BOOLEAN,
+        )
+    )
+class TestClass2:
+    def __init__(self, val):
+        self.val = val
+    
+    @save_method
+    def save(self, path):
+        with open(path, "w") as file:
+            file.write(str(self.val))
+
+    @load_method
+    def load(self, path):
+        with open(path, "r") as file:
+            val = file.read()
+            print(f"path: {path}, val: {val}")
+            self.val = int(val)
+
+    @metadata_setter(("squaredVal",))
+    def set_squaredVal(self):
+        sVal = self.val ** 2
+        return (sVal, )
+
+    @metadata_setter(("cubedVal",))
+    def set_cubedVal(self):
+        cVal = self.val ** 3
+        return (cVal, )
+
 
 CacheInterface.repl()

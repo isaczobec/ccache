@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 import inspect
-from typing import Callable
+from typing import Any, Callable
 from computation_object_data import ComputationObjectData
 from computation_object_metadata import ComputationObjectMetadata
 from compute_function import In, Out, ComputationFunction
@@ -130,6 +130,11 @@ class CacheEngine:
         path = os.path.join(CacheEngine._obj_dir,uid)
         load_func(path)
         return new_obj
+    
+    @staticmethod
+    def get_metadata_for_obj_uids(uids: list[str], identifier_or_type: str | type):
+        obj_data = CacheEngine._get_computation_object_data(identifier_or_type)
+        
 
     @staticmethod
     def _initialize():

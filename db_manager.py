@@ -274,6 +274,19 @@ class DBManager:
         rows = cur.fetchall()
 
         return [(r["uid"], r["co_identifier"]) for r in rows]
+    
+    @staticmethod
+    def get_rows_for_obj_uids(uids: list[str], co_data: ComputationObjectData):
+        relation = DBManager._get_co_relation(object_data=co_data)
+        query = f"""
+        SELECT * FROM {relation}
+        WHERE uid IN ({", ".join(uids)});
+        """
+        cur = DBManager.conn.execute(query)
+        res = cur.fetchall()
+        DBManager.conn.commit()
+        
+        return res
 
 
     @staticmethod
