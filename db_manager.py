@@ -274,6 +274,11 @@ class DBManager:
         rows = cur.fetchall()
 
         return [(r["uid"], r["co_identifier"]) for r in rows]
+
+
+    @staticmethod
+    def get_all_rows_for_co_id(co_id: str):
+        return DBManager.query(f"SELECT * FROM :{co_id}")
     
     @staticmethod
     def get_rows_for_obj_uids(uids: list[str], co_data: ComputationObjectData):

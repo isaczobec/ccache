@@ -97,7 +97,7 @@ class CacheEngine:
         func(computation_object)
 
     @staticmethod
-    def save_object(obj):
+    def save_object(obj) -> str | None:
         obj_data = CacheEngine._get_computation_object_data(type(obj))
         
         # check that the object has a save method
@@ -112,6 +112,8 @@ class CacheEngine:
         save_func(path)
 
         DBManager.insert_computation_object(obj, uid, obj_data)
+
+        return uid
 
     @staticmethod
     def load_object(identifier_or_type: str | type, uid: str) -> any:
@@ -165,12 +167,16 @@ class CacheEngine:
         CacheEngine._computation_function_pre_dict[func_name] = (func, inputs, output)
 
     @staticmethod
-    def perform_computation_function(func_name: str, input_objects: list[any], normal_args: tuple):
+    def get_computation_function_input_datas(func_name: str):
+        return CacheEngine._computation_function_dict[func_name].inputs
+        
+    @staticmethod
+    def perform_computation_function(func_name: str, input_objects: list[any], normal_args: tuple | list):
         comp_func = CacheEngine._computation_function_dict[func_name]
 
         # if incorrect amount of arguments, throw an exception
         if len(input_objects) != len(comp_func.inputs):
-            raise ValueError(f"Wrong amount of arguments for function {func_name}; excpected {len(comp_func.inputs)} but got {len(input_objects)}!")
+            raise ValueError(f"Wrong amount of computation object inputs for function {func_name}; excpected {len(comp_func.inputs)} but got {len(input_objects)}!")
 
         # verify that the function was called with correct input arguments
         for idx,inp_object in enumerate(input_objects):
@@ -180,8 +186,27 @@ class CacheEngine:
             if obj_data != comp_func.inputs[idx]:
                 raise ValueError(f"Wrong input type for function {func_name}; excpected {comp_func.inputs[idx].object_identifier} but got {obj_data.object_identifier}!")
 
+        # attempt casting the normal args
+        cast_normal_args = []
+        
+
+        # get the parameters after the computation object inputs to typecast them
+        normal_params = list(inspect.signature(comp_func.func).parameters.values())[len(input_objects):]
+
+        # check that passed normal args are the correct length
+        if len(normal_args) != len(normal_params):
+            raise ValueError(f"Expected {len(normal_params)} normal arguments for the function {func_name} but was passed {len(normal_args)}")
+
+        # attempt to cast the arguments
+        for i,arg in enumerate(normal_args):
+            try:
+                annotation = normal_params[i].annotation
+                cast_normal_args.append(annotation(arg))
+            except Exception as e:
+                raise TypeError(f"Could not cast {arg} as type {annotation}: {e}") from e
+
         # call the function
-        result_obj = comp_func.func(*input_objects, *normal_args)
+        result_obj = comp_func.func(*input_objects, *cast_normal_args)
 
         # check that the result is a computation object with correct type
         result_obj_data = CacheEngine._get_computation_object_data(type(result_obj))
