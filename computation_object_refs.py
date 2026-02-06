@@ -38,3 +38,7 @@ class CoVars:
         
         return CoVars.co_ref_dict[varname]
             
+    @staticmethod
+    def get_metadata_list_from_ref(ref: ComputationObjectReference):
+        if ref.vartype == VARTYPE_LIST:
+            metadata_dicts = [ref.co_data.metadata.compute_metadata(obj) for obj in ref.data]

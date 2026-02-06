@@ -149,7 +149,12 @@ class SetCommand(Command):
             string_rep = DBManager.get_string_rep_for_query_res(rows)
             print(string_rep)
 
+            # load the objects
             objs = [CacheEngine.load_object(uc[1], uc[0]) for uc in ucs]
+            
+            # convert to list to single object if there is only one object
+            if len(objs) == 1: objs = objs[0]
+
             CoVars.add_co_ref(varname, objs)
 
             print(f"Stored the result in the variable {varname}!")
@@ -443,8 +448,8 @@ def test_func(a: TestClass2, b: TestClass2, addExtra: int):
     c = TestClass2(a.val + b.val + addExtra)
     return c
 
-for i in range(3):
-    u = TestClass2(i+10)
-    CacheEngine.save_object(u)
+# for i in range(3):
+#     u = TestClass2(i+10)
+#     CacheEngine.save_object(u)
 
 CacheInterface.repl()
