@@ -30,10 +30,14 @@ It allows you to:
 
 ## Installation (development)
 
-From the project root:
-
+call
 ```bash
-pip install -e .
+pip install git+https://github.com/izobec/ccache.git
+```
+
+to reinstall after updates:
+```bash
+pip install --upgrade git+https://github.com/izobec/ccache.git
 ```
 
 # Usage
