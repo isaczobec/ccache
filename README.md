@@ -30,14 +30,14 @@ It allows you to:
 
 ## Installation (development)
 
-call
+On ubuntu:
 ```bash
-pip install git+https://github.com/izobec/ccache.git
+pip install git+ssh://git@github.com/isaczobec/ccache.git
 ```
 
 to reinstall after updates:
 ```bash
-pip install --upgrade git+https://github.com/izobec/ccache.git
+pip install --upgrade git+ssh://git@github.com/isaczobec/ccache.git
 ```
 
 # Usage
