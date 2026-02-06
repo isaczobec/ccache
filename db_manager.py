@@ -280,13 +280,63 @@ class DBManager:
         relation = DBManager._get_co_relation(object_data=co_data)
         query = f"""
         SELECT * FROM {relation}
-        WHERE uid IN ({", ".join(uids)});
+        WHERE uid IN ({", ".join([f"'{uid}'" for uid in uids])});
         """
         cur = DBManager.conn.execute(query)
         res = cur.fetchall()
         DBManager.conn.commit()
         
         return res
+    
+    @staticmethod
+    def get_string_rep_for_query_res(query_res) -> str:
+        if not query_res:
+            return "[Empty Relation]"
+
+        columns = list(query_res[0].keys())
+
+        def get_col_val(row, col_name):
+            if col_name == "uid":
+                return str(row[col_name])[:5]
+            return str(row[col_name])
+
+        # Build table as strings first
+        rows_as_str = [
+            [get_col_val(r, c) for c in columns]
+            for r in query_res
+        ]
+
+        # Compute column widths (max of header vs data)
+        col_widths = {
+            c: max(
+                len(c),
+                max(len(row[i]) for row in rows_as_str)
+            )
+            for i, c in enumerate(columns)
+        }
+
+        def format_row(values):
+            return " | ".join(
+                values[i].ljust(col_widths[c])
+                for i, c in enumerate(columns)
+            )
+
+        lines = []
+
+        # Header
+        lines.append(format_row(columns))
+
+        # Separator
+        lines.append(
+            "-+-".join("-" * col_widths[c] for c in columns)
+        )
+
+        # Data rows
+        for row in rows_as_str:
+            lines.append(format_row(row))
+
+        return "\n".join(lines)
+
 
 
     @staticmethod

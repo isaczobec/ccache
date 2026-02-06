@@ -126,11 +126,22 @@ class SetCommand(Command):
     def _execute_logic(self, pos_args, kw_args, flag_args):
         varname = pos_args[0]
 
+        print("DSAOIJDO")
+
         if "query" in kw_args:
+
+            # get and perform the query
             query = kw_args["query"][0]
-            ucs = DBManager.get_uids_and_co_ids(query)
+            try:
+                ucs = DBManager.get_uids_and_co_ids(query)
+            except Exception as e:
+                print(f"Exception while executing the query: {str(e)}")
+                return
+                
             objs = [CacheEngine.load_object(uc[1], uc[0]) for uc in ucs]
             CoVars.add_co_ref(varname, objs)
+
+            print(f"Set {varname} to the result of the query!")
             return
         
         if "var" in kw_args:
@@ -139,7 +150,9 @@ class SetCommand(Command):
             if ref is None:
                 CacheInterface.error(f"The variable {var} did not exist!")
                 return
+
             CoVars.add_co_ref(var, ref.data)
+            print(f"Made {varname} point to the same value as {var}!")
 
 class SetCommand(Command):
     def initialize(self):
@@ -165,6 +178,18 @@ class SetCommand(Command):
         if "query" in kw_args:
             query = kw_args["query"][0]
             ucs = DBManager.get_uids_and_co_ids(query)
+
+            if ucs is None or len(ucs) <= 0:
+                print("The query result was empty!")
+                return
+            
+            # get and print the query res
+            co_data = CacheEngine._get_computation_object_data(ucs[0][1])
+            uids = [uc[0] for uc in ucs]
+            rows = DBManager.get_rows_for_obj_uids(uids, co_data)
+            string_rep = DBManager.get_string_rep_for_query_res(rows)
+            print(string_rep)
+
             objs = [CacheEngine.load_object(uc[1], uc[0]) for uc in ucs]
             CoVars.add_co_ref(varname, objs)
             return
@@ -244,11 +269,6 @@ class CacheInterface:
                 raise e
 
 
-CacheInterface.register_command(CommandInfo(
-    "print",
-    PrintCommand(),
-    "prints a value"
-))
 CacheInterface.register_command(CommandInfo(
     "set",
     SetCommand(),
