@@ -575,8 +575,7 @@ class CacheInterface:
             try:
                 CacheInterface.commands[comm].command_instance.execute(args_str)
             except Exception as e:
-                print("Exception:", e)
-                raise e
+                print("Exception while executing the command:", e)
             
             if CacheInterface.shouldExit:
                 break
