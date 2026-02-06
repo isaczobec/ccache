@@ -2,13 +2,23 @@
 
 from computation_object_data import ComputationObjectData
 
+class Void:
+    """
+    Class specifying that a computation function either
+    has no computation object output or inputs.
+    """
+    pass
 
 class In:
     """
     Class for passing input arguments to a compute function
     """
     def __init__(self, *in_types):
-        self.in_types = in_types
+        if len(in_types) == 0 or in_types[0] is Void:
+            self.in_types = []
+            self.is_void = True
+        else:
+            self.in_types = in_types
 
 class Out:
     """

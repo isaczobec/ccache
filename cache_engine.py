@@ -3,7 +3,7 @@ import inspect
 from typing import Any, Callable
 from computation_object_data import ComputationObjectData
 from computation_object_metadata import ComputationObjectMetadata
-from compute_function import In, Out, ComputationFunction
+from compute_function import In, Out, ComputationFunction, Void
 import sqltypes as sqlt
 import os
 import uuid
@@ -16,6 +16,9 @@ SAVE_METHOD_NAME = "save_method"
 IS_LOAD_METHOD_FLAG = "_is_load_method"
 LOAD_METHOD_NAME = "load_method"
 METADATA_TUPLE_NAME = "metadata_tuple"
+
+
+
 
 class CacheEngine:
 
@@ -78,7 +81,9 @@ class CacheEngine:
     def _get_computation_object_data(identifier_or_type: str | type):
         # find the computation object
         computation_object = None
-        if isinstance(identifier_or_type, str):
+        if (identifier_or_type is Void):
+            return Void
+        elif isinstance(identifier_or_type, str):
             computation_object = CacheEngine._computation_object_dict[identifier_or_type]
         elif isinstance(identifier_or_type, type):
             id = CacheEngine._computation_object_type_to_identifier_dict[identifier_or_type]
@@ -232,9 +237,10 @@ class CacheEngine:
         result_obj = comp_func.func(*input_objects, *cast_normal_args)
 
         # check that the result is a computation object with correct type
-        result_obj_data = CacheEngine._get_computation_object_data(type(result_obj))
-        if result_obj_data != comp_func.output:
-            raise ValueError(f"The type of the result of the function {func_name} was incorrect; excpected {comp_func.output.object_identifier} but got {result_obj_data.object_identifier}!")
+        if comp_func.output is not Void:
+            result_obj_data = CacheEngine._get_computation_object_data(type(result_obj))
+            if result_obj_data != comp_func.output:
+                raise ValueError(f"The type of the result of the function {func_name} was incorrect; excpected {comp_func.output.object_identifier} but got {result_obj_data.object_identifier}!")
 
         return result_obj
 

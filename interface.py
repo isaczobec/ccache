@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 import shlex
 from typing import Callable, Any
-from computation_object_refs import CoVars, VARTYPE_LIST, VARTYPE_SINGLE
+from computation_object_refs import CoVars, VARTYPE_LIST, VARTYPE_SINGLE, ComputationObjectReference
 from db_manager import DBManager
 from cache_engine import *
 import curses
@@ -285,14 +285,14 @@ class SqlCommand(Command):
         self.register_argument(ArgInfo(
             "query",
             ARGTYPE_POS,
-            "Read-only SQL query (SELECT only). Use quotes if needed.",
+            "SQL query to execute. INSERTing rows is prohibited. Use quotes if needed.",
         ))
 
     def _execute_logic(self, pos_args, kw_args, flag_args):
         query = pos_args[0].strip()
 
-        if not query.lower().startswith("select"):
-            CacheInterface.error("Only SELECT queries are allowed.")
+        if query.lower().startswith("insert"):
+            CacheInterface.error("INSERT queries are not allowed.")
             return
 
         try:
@@ -445,6 +445,72 @@ class ClearCommand(Command):
         import os
         os.system("cls" if os.name == "nt" else "clear")
 
+class LsVarsCommand(Command):
+    def initialize(self):
+        self.register_argument(ArgInfo(
+            "varname",
+            ARGTYPE_KW,
+            "Show metadata for the given variable name",
+            aliases=("v",)
+        ))
+
+        self.register_argument(ArgInfo(
+            "all-metadata",
+            ARGTYPE_FLAG,
+            "Show all metadata rows for the variable(s)",
+            aliases=("a",)
+        ))
+
+    def _execute_logic(self, pos_args, kw_args, flag_args):
+        if not CoVars.co_ref_dict:
+            print("[No variables defined]")
+            return
+
+        # list all variables
+        print("Variables:")
+        for varname, ref in CoVars.co_ref_dict.items():
+            vartype_str = "List" if ref.vartype == VARTYPE_LIST else "Single"
+            type_name = ref.co_data.cls.__name__
+            print(f"  {varname:<15} ({vartype_str}) -> {type_name}")
+
+        # helper to print metadata nicely using get_string_rep_for_query_res
+        def print_metadata(ref: ComputationObjectReference):
+            # get uids
+            if ref.vartype == VARTYPE_SINGLE:
+                objs = [ref.data]
+            else:
+                objs = ref.data
+
+            uids = [CacheEngine.get_co_hash(o) for o in objs]
+            rows = DBManager.get_rows_for_obj_uids(uids, ref.co_data)
+            print(DBManager.get_string_rep_for_query_res(rows))
+
+        # if -varname is passed, show metadata
+        if "varname" in kw_args:
+            var_to_show = kw_args["varname"][0]
+            ref = CoVars.get_co_ref(var_to_show)
+            if ref is None:
+                print(f"Variable '{var_to_show}' does not exist!")
+                return
+            
+            print(f"\nMetadata for '{var_to_show}':")
+            print_metadata(ref)
+
+        # if -all-metadata flag is set, show all rows for all variables
+        elif "all-metadata" in flag_args:
+            for varname, ref in CoVars.co_ref_dict.items():
+                print(f"\nMetadata for '{varname}':")
+                print_metadata(ref)
+
+
+class QuitCommand(Command):
+    def initialize(self):
+        pass
+
+    def _execute_logic(self, pos_args, kw_args, flag_args):
+        print("Exiting...")
+        CacheInterface.shouldExit = True
+
 @dataclass
 class CommandInfo:
     command_name: str
@@ -479,6 +545,8 @@ class CacheInterface:
     CURSOR_SYMBOL = f"{Ansi.BOLD}{Ansi.CYAN}ccache>{Ansi.RESET} "
     commands: dict[str, CommandInfo] = {}
 
+    shouldExit = False
+
     @staticmethod
     def error(message: str):
         print(message)
@@ -509,6 +577,9 @@ class CacheInterface:
             except Exception as e:
                 print("Exception:", e)
                 raise e
+            
+            if CacheInterface.shouldExit:
+                break
             
     @staticmethod
     def select_uid_from_query_res(query_res: Any, prompt: str) -> str | None:
@@ -649,7 +720,17 @@ CacheInterface.register_command(CommandInfo(
     "clear the screen"
 ))
 
+CacheInterface.register_command(CommandInfo(
+    "lsv",
+    LsVarsCommand(),
+    "List all variables, optionally show metadata"
+))
 
+CacheInterface.register_command(CommandInfo(
+    "quit",
+    QuitCommand(),
+    "exit the program"
+))
 
 
 
@@ -701,6 +782,14 @@ class TestClass2:
 def test_func(a: TestClass2, b: TestClass2, addExtra: int):
     c = TestClass2(a.val + b.val + addExtra)
     return c
+
+@computation_function(
+        In(Void), 
+        Out(TestClass2)
+)
+def other():
+    print("HELLO FROM THE OTHER FUNCTION!")
+    return TestClass2(42)
 
 for i in range(3):
     u = TestClass2(i+10)

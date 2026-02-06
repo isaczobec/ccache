@@ -19,6 +19,8 @@ class CoVars:
     @staticmethod
     def add_co_ref(varname: str, obj: Any) -> None:
 
+        CoVars.rm_co_ref(varname) # remove old reference if it exists, to avoid stale references and memory leaks
+
         # get the co_data based on the 
         co_data = None
         vartype = -1
@@ -47,6 +49,25 @@ class CoVars:
             return None
         
         return CoVars.co_ref_dict[varname]
+
+    @staticmethod
+    def rm_co_ref(varname: str) -> None:
+        """
+        Removes a named reference to a computation object if it is present.
+        If not present, does nothing.
+        """
+        if varname in CoVars.co_ref_dict:
+            ref = CoVars.co_ref_dict[varname]
+            if ref.vartype == VARTYPE_SINGLE:
+                uid = CacheEngine.get_co_hash(ref.data)
+                if uid in CoVars.uid_objs_dict:
+                    del CoVars.uid_objs_dict[uid]
+            elif ref.vartype == VARTYPE_LIST:
+                for o in ref.data:
+                    uid = CacheEngine.get_co_hash(o)
+                    if uid in CoVars.uid_objs_dict:
+                        del CoVars.uid_objs_dict[uid]
+            del CoVars.co_ref_dict[varname]
             
     @staticmethod
     def get_metadata_list_from_ref(ref: ComputationObjectReference):
