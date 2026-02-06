@@ -26,7 +26,6 @@ class TestClass2:
     def load(self, path):
         with open(path, "r") as file:
             val = file.read()
-            print(f"path: {path}, val: {val}")
             self.val = int(val)
 
     @metadata_setter(("squaredVal",))

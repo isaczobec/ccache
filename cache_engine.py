@@ -7,8 +7,9 @@ from compute_function import In, Out, ComputationFunction
 import sqltypes as sqlt
 import os
 import uuid
-
 from db_manager import DBManager
+
+# TODO: factor out magic strings
 
 IS_SAVE_METHOD_FLAG = "_is_save_method"
 SAVE_METHOD_NAME = "save_method"
@@ -96,7 +97,12 @@ class CacheEngine:
         # apply the function to the object
         func(computation_object)
 
-    
+    @staticmethod
+    def get_co_hash(obj: Any) -> str:
+        """
+        Returns the hash for a computation object. Used to refer to a computation object.
+        """
+        return str(hex(hash(obj)))[2:]
 
     @staticmethod
     def save_object(obj) -> str | None:
@@ -108,12 +114,18 @@ class CacheEngine:
             raise ValueError(f"the computattion object of type {type(obj)} did not have a save function defined!")
         check_saveload_func_signature(save_func) # verify correct signature
 
-        # uid = str(hash(obj)) # TODO: this is not good
-        uid = str(uuid.uuid4())
+        uid = CacheEngine.get_co_hash(obj)
         path = os.path.join(CacheEngine._obj_dir,uid)
-        save_func(path)
 
-        DBManager.insert_computation_object(obj, uid, obj_data)
+        try:
+            DBManager.insert_computation_object(obj, uid, obj_data)
+        except Exception as e:
+            print(f"Could not save object of type {type(obj)} to the database: {e}")
+            if "UNIQUE" in str(e):
+                print("This is likely because an identical object with the same hash already exists in the database. \nDelete it or change the hash function!")
+            return None
+
+        save_func(path)
 
         return uid
 
@@ -136,9 +148,18 @@ class CacheEngine:
         return new_obj
     
     @staticmethod
-    def get_metadata_for_obj_uids(uids: list[str], identifier_or_type: str | type):
-        obj_data = CacheEngine._get_computation_object_data(identifier_or_type)
-        
+    def get_metadatas_for_computation_objects(objs: list[Any]):
+        """
+        Returns a list of metadata dicts for the given computation objects.
+        Each metadata dict contains the metadata variables and their values.
+        The dicts also contain the "uid" key with the computation object hash as value.
+        """
+        co_data = CacheEngine._get_computation_object_data(type(objs[0]))
+        metadatas = [
+            {"uid": CacheEngine.get_co_hash(obj), **co_data.metadata.compute_metadata(obj)}
+            for obj in objs
+        ]
+        return metadatas
 
     @staticmethod
     def _initialize():

@@ -6,14 +6,18 @@ import re
 from dataclasses import dataclass
 import shlex
 from typing import Callable, Any
-from computation_object_refs import CoVars
+from computation_object_refs import CoVars, VARTYPE_LIST, VARTYPE_SINGLE
 from db_manager import DBManager
 from cache_engine import *
 import curses
 
+import readline  # stdlib on Unix, needs pyreadline on Windows
+
 ARGTYPE_POS   = 1
 ARGTYPE_KW    = 2
 ARGTYPE_FLAG  = 3
+
+
 
 
 @dataclass
@@ -22,6 +26,7 @@ class ArgInfo:
     arg_type: int
     info_str: str
     preprocess_func: Callable[[Any], Any] = lambda x: x
+    aliases: tuple[str, ...] = ()
 
 class Command(abc.ABC):
     def __init__(self):
@@ -46,7 +51,15 @@ class Command(abc.ABC):
             token = tokens[i]
             name = token.lstrip("-")
 
-            if name not in self.all_args:
+            # find the argument info from name or aliases
+            arg_info = None
+            for a in self.all_args.values():
+                if name == a.arg_name or name in a.aliases:
+                    arg_info = a
+                    name = a.arg_name
+                    break
+
+            if arg_info is None:
                 CacheInterface.error(f"Argument '{name}' is not valid for this command")
                 return None
 
@@ -113,17 +126,19 @@ class SetCommand(Command):
         self.register_argument(ArgInfo(
             "varname",
             ARGTYPE_POS,
-            'the varname to store a result in.'
+            'the varname to store a result in.',
         ))
         self.register_argument(ArgInfo(
             "query",
             ARGTYPE_KW,
-            'the query to execute. Escape in quotes ("").'
+            'the query to execute. Escape in quotes ("").',
+            aliases=("q",)
         ))
         self.register_argument(ArgInfo(
             "var",
             ARGTYPE_KW,
-            'To rename a var to another var.'
+            'To make the variable point to the same object as another variable.',
+            aliases=("v",)
         ))
 
     def _execute_logic(self, pos_args, kw_args, flag_args):
@@ -185,7 +200,8 @@ class ExecCommand(Command):
         self.register_argument(ArgInfo(
             "arg",
             ARGTYPE_KW,
-            "Regular arguments to pass to the function."
+            "Regular arguments to pass to the function.",
+            aliases=("a", "args")
         ))
         self.register_argument(ArgInfo(
             "set",
@@ -210,7 +226,23 @@ class ExecCommand(Command):
                 if ref is None:
                     CacheInterface.error(f"The variable {varname} does not exist!")
                     return
-                input_computation_objects.append(ref.data)
+                
+                if ref.vartype == VARTYPE_LIST:
+                    sel_uid = CacheInterface.select_uid_from_query_res(
+                        CacheEngine.get_metadatas_for_computation_objects(ref.data),
+                        f"Select an object from variable {varname} to pass to {func_name}"
+                    )
+                    if sel_uid is None:
+                        CacheInterface.error(f"No selection made for variable {varname}!")
+                        return
+                    obj = CoVars.get_obj_from_uid(sel_uid)
+                    if obj is None:
+                        CacheInterface.error(f"Could not find object with uid {sel_uid} from variable {varname}!")
+                        return
+                    input_computation_objects.append(obj)
+
+                elif ref.vartype == VARTYPE_SINGLE:
+                    input_computation_objects.append(ref.data)
 
         # check that the correct amount of args have been passed
         # to the computation function.
@@ -244,9 +276,174 @@ class ExecCommand(Command):
         print(f"Saved resulting object with uid {uid[0:9]}...")
 
         if "set" in kw_args:
-            varname = kw_args["set"]
+            varname = kw_args["set"][0]
             CoVars.add_co_ref(varname, res_obj)
             print(f"Stored the result in {varname}!")
+
+class SqlCommand(Command):
+    def initialize(self):
+        self.register_argument(ArgInfo(
+            "query",
+            ARGTYPE_POS,
+            "Read-only SQL query (SELECT only). Use quotes if needed.",
+        ))
+
+    def _execute_logic(self, pos_args, kw_args, flag_args):
+        query = pos_args[0].strip()
+
+        if not query.lower().startswith("select"):
+            CacheInterface.error("Only SELECT queries are allowed.")
+            return
+
+        try:
+            res = DBManager.query(query)
+        except Exception as e:
+            CacheInterface.error(f"SQL error: {e}")
+            return
+
+        print(DBManager.get_string_rep_for_query_res(res))
+
+class ListComputationObjectsCommand(Command):
+    def initialize(self):
+        pass
+
+    def _execute_logic(self, pos_args, kw_args, flag_args):
+        if not CacheEngine._computation_object_dict:
+            print("[No computation objects registered]")
+            return
+
+        print("Computation Objects:")
+        for identifier, data in CacheEngine._computation_object_dict.items():
+            print(f"  {identifier:<20} -> {data.cls.__name__}")
+
+class ListComputationFunctionsCommand(Command):
+    def initialize(self):
+        pass
+
+    def _execute_logic(self, pos_args, kw_args, flag_args):
+        if not CacheEngine._computation_function_dict:
+            print("[No computation functions registered]")
+            return
+
+        print("Computation Functions:")
+
+        for name, comp_func in CacheEngine._computation_function_dict.items():
+            sig = inspect.signature(comp_func.func)
+
+            input_types = [
+                d.object_identifier for d in comp_func.inputs
+            ]
+
+            normal_params = list(sig.parameters.values())[len(input_types):]
+            normal_args = ", ".join(
+                f"{p.name}: {p.annotation.__name__ if p.annotation is not inspect._empty else 'Any'}"
+                for p in normal_params
+            )
+
+            out_type = comp_func.output.object_identifier
+
+            print(f"\n{name}")
+            print(f"  inputs : {', '.join(input_types)}")
+            print(f"  args   : ({normal_args})")
+            print(f"  output : {out_type}")
+
+class HelpCommand(Command):
+
+    def initialize(self):
+        self.register_argument(ArgInfo(
+            "command",
+            ARGTYPE_KW,
+            "Show detailed help for a single command",
+            aliases=("c", "cmd")
+        ))
+
+        self.register_argument(ArgInfo(
+            "all-args",
+            ARGTYPE_FLAG,
+            "Show arguments for all commands",
+            aliases=("a", "args")
+        ))
+
+    def _execute_logic(self, pos_args, kw_args, flag_args):
+        commands = CacheInterface.commands
+
+        if not commands:
+            print("[No commands registered]")
+            return
+
+        # ---- ALL ARGS FIRST ----
+        print("use -command <commandname> for more details on a specific command")
+        print("use -all-args to show all arguments for all commands\n")
+        if "all-args" in flag_args:
+            print("=== Command Arguments ===")
+            for name, cmd_info in commands.items():
+                print(f"{name}: {cmd_info.command_desc}")
+                self._print_command_args(name, cmd_info)
+                print()
+
+            print("=== Commands ===")
+            return
+
+        # ---- SINGLE COMMAND ----
+        if "command" in kw_args:
+            cmd_name = kw_args["command"][0]
+            if cmd_name not in commands:
+                CacheInterface.error(f"Unknown command '{cmd_name}'")
+                return
+
+            self._print_command_full(cmd_name, commands[cmd_name])
+            return
+
+        # ---- DEFAULT: command list ----
+        for name, cmd_info in commands.items():
+            print(f"{name:<15} {cmd_info.command_desc}")
+
+    def _print_command_full(self, name, cmd_info):
+        print(f"{name}")
+        print(f"  {cmd_info.command_desc}")
+        self._print_command_args(name, cmd_info)
+
+    def _print_command_args(self, name, cmd_info):
+        cmd = CacheInterface.commands[name].command_instance
+
+        if not cmd.all_args or len(cmd.all_args) <= 0:
+            print(f"{name}: [no arguments]")
+            return
+
+        print(f"usage {name}:")
+        usage_str = f"  {name}"
+        for arg in cmd.pos_args:
+            usage_str += f" <{arg.arg_name}>"
+        for cmd_arg in cmd.all_args.values():
+            if cmd_arg.arg_type == ARGTYPE_KW:
+                usage_str += f" [-{cmd_arg.arg_name} [...]]"
+            elif cmd_arg.arg_type == ARGTYPE_FLAG:
+                usage_str += f" [-{cmd_arg.arg_name}]"
+
+        print(usage_str)
+
+        for arg_name, arg in cmd.all_args.items():
+            if arg.arg_type == ARGTYPE_POS:
+                kind = "positional"
+            elif arg.arg_type == ARGTYPE_KW:
+                kind = "keyword"
+            elif arg.arg_type == ARGTYPE_FLAG:
+                kind = "flag"
+            else:
+                kind = "unknown"
+
+            print(f"    {arg_name:<12} ({kind}) | {arg.info_str}")
+            if arg.aliases:
+                alias_str = f"(aliases: {', '.join(arg.aliases)})"
+                print(f"      {'':<12} {alias_str}")
+
+class ClearCommand(Command):
+    def initialize(self):
+        pass
+
+    def _execute_logic(self, pos_args, kw_args, flag_args):
+        import os
+        os.system("cls" if os.name == "nt" else "clear")
 
 @dataclass
 class CommandInfo:
@@ -254,8 +451,32 @@ class CommandInfo:
     command_instance: Command
     command_desc: str
 
+class Ansi:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+
+    CYAN = "\033[36m"
+    GREEN = "\033[32m"
+    RED = "\033[31m"
+    YELLOW = "\033[33m"
+
+
+# initialize command line history file (ChatGPT generated)
+import os
+histfile = os.path.expanduser("~/.ccache_history")
+try:
+    readline.read_history_file(histfile)
+except FileNotFoundError:
+    pass
+
+import atexit
+atexit.register(readline.write_history_file, histfile)
+
+# customize tab completion
+readline.parse_and_bind("tab: complete")
+
 class CacheInterface:
-    CURSOR_SYMBOL = "ccache> "
+    CURSOR_SYMBOL = f"{Ansi.BOLD}{Ansi.CYAN}ccache>{Ansi.RESET} "
     commands: dict[str, CommandInfo] = {}
 
     @staticmethod
@@ -271,8 +492,7 @@ class CacheInterface:
     def repl():
         CacheEngine.start()
         while True:
-            print(CacheInterface.CURSOR_SYMBOL, end="")
-            inp = input().strip()
+            inp = input(CacheInterface.CURSOR_SYMBOL).strip()
 
             if not inp:
                 continue
@@ -399,9 +619,41 @@ CacheInterface.register_command(CommandInfo(
     ExecCommand(),
     "executes a computation function."
 ))
+CacheInterface.register_command(CommandInfo(
+    "sql",
+    SqlCommand(),
+    "execute a read-only SQL query and print the result"
+))
+
+CacheInterface.register_command(CommandInfo(
+    "lsc",
+    ListComputationObjectsCommand(),
+    "list all computation object types"
+))
+
+CacheInterface.register_command(CommandInfo(
+    "lsf",
+    ListComputationFunctionsCommand(),
+    "list all computation functions and their signatures"
+))
+
+CacheInterface.register_command(CommandInfo(
+    "help",
+    HelpCommand(),
+    "show available commands and usage information"
+))
+
+CacheInterface.register_command(CommandInfo(
+    "clear",
+    ClearCommand(),
+    "clear the screen"
+))
+
+
+
+
 
 CacheEngine._initialize()
-
 
 @computation_object(
     "Testclass2",
@@ -416,6 +668,9 @@ CacheEngine._initialize()
 class TestClass2:
     def __init__(self, val):
         self.val = val
+
+    def __hash__(self):
+        return hash(self.val)
     
     @save_method
     def save(self, path):
@@ -426,7 +681,6 @@ class TestClass2:
     def load(self, path):
         with open(path, "r") as file:
             val = file.read()
-            print(f"path: {path}, val: {val}")
             self.val = int(val)
 
     @metadata_setter(("squaredVal",))
@@ -448,8 +702,8 @@ def test_func(a: TestClass2, b: TestClass2, addExtra: int):
     c = TestClass2(a.val + b.val + addExtra)
     return c
 
-# for i in range(3):
-#     u = TestClass2(i+10)
-#     CacheEngine.save_object(u)
+for i in range(3):
+    u = TestClass2(i+10)
+    CacheEngine.save_object(u)
 
 CacheInterface.repl()

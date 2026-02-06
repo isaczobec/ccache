@@ -14,7 +14,8 @@ class ComputationObjectReference:
 
 class CoVars:
     co_ref_dict: dict[str, ComputationObjectReference | list[ComputationObjectMetadata]] = {}
-    
+    uid_objs_dict: dict[str, Any] = {}
+
     @staticmethod
     def add_co_ref(varname: str, obj: Any) -> None:
 
@@ -31,6 +32,15 @@ class CoVars:
         co_ref = ComputationObjectReference(varname, vartype, obj, co_data)
         CoVars.co_ref_dict[varname] = co_ref
 
+        # also store references to the objects with uids as keys for fast retrieval
+        if vartype == VARTYPE_SINGLE:
+            uid = CacheEngine.get_co_hash(obj)
+            CoVars.uid_objs_dict[uid] = obj
+        elif vartype == VARTYPE_LIST:
+            for o in obj:
+                uid = CacheEngine.get_co_hash(o)
+                CoVars.uid_objs_dict[uid] = o
+        
     @staticmethod
     def get_co_ref(varname: str) -> ComputationObjectReference | None:
         if not varname in CoVars.co_ref_dict:
@@ -41,4 +51,16 @@ class CoVars:
     @staticmethod
     def get_metadata_list_from_ref(ref: ComputationObjectReference):
         if ref.vartype == VARTYPE_LIST:
-            metadata_dicts = [ref.co_data.metadata.compute_metadata(obj) for obj in ref.data]
+            return CacheEngine.get_metadatas_for_computation_objects(ref.data)
+        elif ref.vartype == VARTYPE_SINGLE:
+            return CacheEngine.get_metadatas_for_computation_objects([ref.data])
+
+    @staticmethod
+    def get_obj_from_uid(uid: str) -> Any | None:
+        """
+        Returns the computation object with the given uid, or None if it does not exist.
+        """
+        if not uid in CoVars.uid_objs_dict:
+            return None
+        
+        return CoVars.uid_objs_dict[uid]

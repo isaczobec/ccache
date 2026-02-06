@@ -108,7 +108,6 @@ class DBManager:
         FROM {rel["relation_name"]}
         ;
         """
-        print(copy_stmt)
         DBManager.conn.execute(copy_stmt)
         DBManager.conn.commit()
 
@@ -211,7 +210,6 @@ class DBManager:
         resolved_query = query
         matches = re.findall(r":[A-Za-z0-9]+", query)
         for m in matches:
-            print(m)
 
             # see if the match is a relation name
             identifier = m[1:]
@@ -224,7 +222,6 @@ class DBManager:
             """
             cur = DBManager.conn.execute(stmt, (identifier, ))
             res = cur.fetchone()
-            print(res)
             if res is not None:
                 rel_name = res["relation_name"]
                 print(rel_name)
@@ -242,7 +239,6 @@ class DBManager:
         Words prefixed by ":" are replaced.
         """
         res_query = DBManager._resolve_query(query)
-        print(res_query)
         cur = DBManager.conn.execute(res_query)
         DBManager.conn.commit()
         res = cur.fetchall()
