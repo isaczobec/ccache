@@ -5,8 +5,8 @@ import hashlib
 from typing import Optional
 import uuid
 
-from computation_object_data import ComputationObjectData
-from computation_object_metadata import ComputationObjectMetadata
+from .computation_object_data import ComputationObjectData
+from .computation_object_metadata import ComputationObjectMetadata
 
 
 # Some copilot help

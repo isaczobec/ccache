@@ -1,13 +1,13 @@
 from dataclasses import dataclass, field
 import inspect
 from typing import Any, Callable
-from computation_object_data import ComputationObjectData
-from computation_object_metadata import ComputationObjectMetadata
-from compute_function import In, Out, ComputationFunction, Void
-import sqltypes as sqlt
+from .computation_object_data import ComputationObjectData
+from .computation_object_metadata import ComputationObjectMetadata
+from .compute_function import In, Out, ComputationFunction, Void
+from . import sqltypes as sqlt
 import os
 import uuid
-from db_manager import DBManager
+from .db_manager import DBManager
 
 # TODO: factor out magic strings
 
@@ -167,9 +167,8 @@ class CacheEngine:
         return metadatas
 
     @staticmethod
-    def _initialize():
+    def initialize():
         DBManager.initialize(CacheEngine._db_dir)
-        pass
 
     @staticmethod
     def start():

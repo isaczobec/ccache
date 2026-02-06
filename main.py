@@ -1,7 +1,7 @@
 
-from cache_engine import *
+from .cache_engine import *
 
-CacheEngine._initialize()
+CacheEngine.initialize()
 
 @computation_object(
     "Testclass2",

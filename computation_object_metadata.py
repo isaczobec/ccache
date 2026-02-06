@@ -1,4 +1,4 @@
-import sqltypes as st
+from . import sqltypes as st
 
 class ComputationObjectMetadata():
     def __init__(self, **kwargs):

@@ -1,6 +1,6 @@
 
 
-from computation_object_data import ComputationObjectData
+from .computation_object_data import ComputationObjectData
 
 class Void:
     """

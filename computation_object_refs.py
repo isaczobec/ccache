@@ -1,5 +1,5 @@
 from typing import Any
-from cache_engine import *
+from .cache_engine import *
 from dataclasses import dataclass
 
 VARTYPE_SINGLE = 1

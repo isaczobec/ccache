@@ -6,9 +6,9 @@ import re
 from dataclasses import dataclass
 import shlex
 from typing import Callable, Any
-from computation_object_refs import CoVars, VARTYPE_LIST, VARTYPE_SINGLE, ComputationObjectReference
-from db_manager import DBManager
-from cache_engine import *
+from .computation_object_refs import CoVars, VARTYPE_LIST, VARTYPE_SINGLE, ComputationObjectReference
+from .db_manager import DBManager
+from .cache_engine import *
 import curses
 
 import readline  # stdlib on Unix, needs pyreadline on Windows
@@ -733,66 +733,68 @@ CacheInterface.register_command(CommandInfo(
 ))
 
 
+if __name__ == "__main__":
 
-CacheEngine._initialize()
+    CacheEngine.initialize()
 
-@computation_object(
-    "Testclass2",
-    metadata=ComputationObjectMetadata(
-        squaredVal = sqlt.INT,
-        cubedVal   = sqlt.INT,
-        # name       = sqlt.TEXT,
-        # extradata  = sqlt.BOOLEAN,
-        # extraextradata  = sqlt.BOOLEAN,
+    @computation_object(
+        "Testclass2",
+        metadata=ComputationObjectMetadata(
+            squaredVal = sqlt.INT,
+            cubedVal   = sqlt.INT,
+            # name       = sqlt.TEXT,
+            # extradata  = sqlt.BOOLEAN,
+            # extraextradata  = sqlt.BOOLEAN,
+            )
         )
+
+    class TestClass2:
+        def __init__(self, val):
+            self.val = val
+
+        def __hash__(self):
+            return hash(self.val)
+        
+        @save_method
+        def save(self, path):
+            with open(path, "w") as file:
+                file.write(str(self.val))
+
+        @load_method
+        def load(self, path):
+            with open(path, "r") as file:
+                val = file.read()
+                self.val = int(val)
+
+        @metadata_setter(("squaredVal",))
+        def set_squaredVal(self):
+            sVal = self.val ** 1
+            return (sVal, )
+
+        @metadata_setter(("cubedVal",))
+        def set_cubedVal(self):
+            cVal = self.val ** 3
+            return (cVal, )
+
+
+    @computation_function(
+            In(TestClass2, TestClass2), 
+            Out(TestClass2)
     )
-class TestClass2:
-    def __init__(self, val):
-        self.val = val
+    def test_func(a: TestClass2, b: TestClass2, addExtra: int):
+        c = TestClass2(a.val + b.val + addExtra)
+        return c
 
-    def __hash__(self):
-        return hash(self.val)
-    
-    @save_method
-    def save(self, path):
-        with open(path, "w") as file:
-            file.write(str(self.val))
+    @computation_function(
+            In(Void), 
+            Out(TestClass2)
+    )
+    def other():
+        print("HELLO FROM THE OTHER FUNCTION!")
+        return TestClass2(42)
 
-    @load_method
-    def load(self, path):
-        with open(path, "r") as file:
-            val = file.read()
-            self.val = int(val)
+    for i in range(3):
+        u = TestClass2(i+10)
+        CacheEngine.save_object(u)
 
-    @metadata_setter(("squaredVal",))
-    def set_squaredVal(self):
-        sVal = self.val ** 1
-        return (sVal, )
-
-    @metadata_setter(("cubedVal",))
-    def set_cubedVal(self):
-        cVal = self.val ** 3
-        return (cVal, )
-
-
-@computation_function(
-        In(TestClass2, TestClass2), 
-        Out(TestClass2)
-)
-def test_func(a: TestClass2, b: TestClass2, addExtra: int):
-    c = TestClass2(a.val + b.val + addExtra)
-    return c
-
-@computation_function(
-        In(Void), 
-        Out(TestClass2)
-)
-def other():
-    print("HELLO FROM THE OTHER FUNCTION!")
-    return TestClass2(42)
-
-for i in range(3):
-    u = TestClass2(i+10)
-    CacheEngine.save_object(u)
-
-CacheInterface.repl()
+    CacheInterface.repl()

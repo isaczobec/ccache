@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from computation_object_metadata import ComputationObjectMetadata
+from .computation_object_metadata import ComputationObjectMetadata
 
 
 @dataclass

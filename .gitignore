@@ -1,1 +1,2 @@
 .ccache/**/*
+__pycache__/**/*

@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ccache"
+version = "0.1.0"
+description = "A computation object cache and query system with interactive CLI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+authors = [
+    { name = "Isac Zobec", email = "zobec.isac@gmail.com" }
+]
+
+keywords = ["cache", "sqlite", "cli", "computation", "metadata"]
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    # stdlib only for now
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+    "mypy",
+]
+
+[project.scripts]
+ccache = "ccache.__main__:main"
+
+[tool.setuptools]
+packages = ["ccache"]
+
+[tool.setuptools.package-dir]
+ccache = "."
+
+[tool.setuptools.exclude-package-data]
+ccache = ["__pycache__/*", "*.pyc"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
