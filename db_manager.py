@@ -208,7 +208,7 @@ class DBManager:
     def _resolve_query(query: str, remove_semicolons: bool = False):
         
         resolved_query = query
-        matches = re.findall(r":[A-Za-z0-9]+", query)
+        matches = re.findall(r":[A-Za-z0-9\_]+", query)
         for m in matches:
 
             # see if the match is a relation name
