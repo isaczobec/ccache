@@ -220,8 +220,10 @@ class CacheEngine:
         # get the parameters after the computation object inputs to typecast them
         normal_params = list(inspect.signature(comp_func.func).parameters.values())[len(input_objects):]
 
+        optional_args = len([p for p in normal_params if p.default])
+
         # check that passed normal args are the correct length
-        if len(normal_args) != len(normal_params):
+        if len(normal_args) + optional_args < len(normal_params):
             raise ValueError(f"Expected {len(normal_params)} normal arguments for the function {func_name} but was passed {len(normal_args)}")
 
         # attempt to cast the arguments
