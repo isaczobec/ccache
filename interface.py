@@ -18,7 +18,7 @@ ARGTYPE_KW    = 2
 ARGTYPE_FLAG  = 3
 
 
-
+repl_scope = {}
 
 @dataclass
 class ArgInfo:
@@ -32,13 +32,14 @@ class Command(abc.ABC):
     def __init__(self):
         self.all_args: dict[str, ArgInfo] = {}
         self.pos_args: list[ArgInfo] = []
+        self.use_shlex_split: bool = True
 
     # some debugging by chatgpt
     def _parse_args(self, args_str: str) -> tuple[list, dict, set] | None:
         kw_args: dict[str, list[str]] = {}
         flag_args: set[str] = set()
 
-        tokens = shlex.split(args_str)
+        tokens = shlex.split(args_str) if self.use_shlex_split else args_str.split(" ")
 
         pos_args: list[str] = []
         i = 0
@@ -279,6 +280,69 @@ class ExecCommand(Command):
             varname = kw_args["set"][0]
             CoVars.add_co_ref(varname, res_obj)
             print(f"Stored the result in {varname}!")
+
+class PythonCommand(Command):
+
+    def initialize(self):
+        self.use_shlex_split = False
+        self.register_argument(ArgInfo(
+            "code",
+            ARGTYPE_KW,
+            "Python code to execute.",
+            aliases=("c",)
+        ))
+
+    def _execute_logic(self, pos_args, kw_args, flag_args):
+        if "code" not in kw_args:
+            CacheInterface.error("No code provided to execute! Use the -code keyword argument to provide code.")
+            return
+
+        code = " ".join(kw_args["code"])
+
+        # concat the scope dict with the global scope so that the code can access builtins and imported modules as well as the computation objects
+        cos_scope_dict = CoVars.get_objects_scope_dict()
+        repl_scope.update(cos_scope_dict)
+
+        try:
+            try:
+                result = eval(code, repl_scope)
+                if result is not None:
+                    print(result)
+            except SyntaxError:
+                exec(code, repl_scope)
+        except Exception as e:
+            CacheInterface.error(f"Error while executing code: {e}")
+            return
+        
+class SelectCommand(Command):
+    def initialize(self):
+        self.register_argument(ArgInfo(
+            "Computation object type",
+            ARGTYPE_POS,
+            "Which type of computation object to select from."
+        ))
+        self.register_argument(ArgInfo(
+            "Variable name",
+            ARGTYPE_POS,
+            "The name of the variable to store the selected computation object in."
+        ))
+
+    def _execute_logic(self, pos_args, kw_args, flag_args):
+        co_type = pos_args[0]
+        varname = pos_args[1]
+
+        uid = CacheInterface.select_uid_from_query_res(
+            DBManager.get_all_rows_for_co_id(co_type),
+            f"Select a {co_type} to store in variable {varname}:")
+        
+        if uid is None:
+            CacheInterface.error("No selection made!")
+            return
+
+        obj = CacheEngine.load_object(co_type, uid)
+        CoVars.add_co_ref(varname, obj)
+        print(f"Stored the selected object in variable {varname}!")
+
 
 class SqlCommand(Command):
     def initialize(self):
@@ -558,7 +622,10 @@ class CacheInterface:
 
     @staticmethod
     def repl():
+
         CacheEngine.start()
+        repl_scope.update(globals())
+
         while True:
             inp = input(CacheInterface.CURSOR_SYMBOL).strip()
 
@@ -729,6 +796,16 @@ CacheInterface.register_command(CommandInfo(
     "quit",
     QuitCommand(),
     "exit the program"
+))
+CacheInterface.register_command(CommandInfo(
+    "py",
+    PythonCommand(),
+    "Run a line of python code."
+))
+CacheInterface.register_command(CommandInfo(
+    "sel",
+    SelectCommand(),
+    "Select a computation object."
 ))
 
 

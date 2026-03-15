@@ -85,3 +85,11 @@ class CoVars:
             return None
         
         return CoVars.uid_objs_dict[uid]
+
+    @staticmethod
+    def get_objects_scope_dict() -> dict[str, Any]:
+        """
+        Returns a dictionary of all computation objects in the current scope, with their varnames as keys.
+        Used for executing code that references these objects.
+        """
+        return {varname: ref.data for varname, ref in CoVars.co_ref_dict.items()}
