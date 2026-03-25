@@ -411,7 +411,7 @@ class ListComputationFunctionsCommand(Command):
                 for p in normal_params
             )
 
-            out_types = ", ".join([output.object_identifier for output in comp_func.output])
+            out_types = ", ".join([output.object_identifier if output is not Void else "Void" for output in comp_func.output])
 
             print(f"\n{name}")
             print(f"  inputs : {', '.join(input_types)}")
