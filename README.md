@@ -28,16 +28,11 @@ It allows you to:
 
 ---
 
-## Installation (development)
+## Installation and updating (development)
 
-On ubuntu:
+Run this pip command to install or update the module:
 ```bash
-pip install git+ssh://git@github.com/isaczobec/ccache.git
-```
-
-to reinstall after updates:
-```bash
-pip install --upgrade git+ssh://git@github.com/isaczobec/ccache.git
+pip install --force-reinstall --upgrade --no-cache-dir git+ssh://git@github.com/isaczobec/ccache.git
 ```
 
 # Usage
