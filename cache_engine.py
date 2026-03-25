@@ -257,7 +257,7 @@ class CacheEngine:
 
 
         # case with single output
-        elif results[0] is not Void:
+        elif results[0] is not None:
             res_obj = results[0]
             output_type = comp_func.output[0]
             result_obj_data = CacheEngine._get_computation_object_data(type(res_obj))
