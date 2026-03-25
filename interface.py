@@ -271,7 +271,7 @@ class ExecCommand(Command):
             CacheInterface.error(f"Error while performing {func_name}: {e}")
             raise e    
 
-        if results is None: return
+        if results is None or results[0] is None or results[0] is Void: return
         
         # save all outputs
         for i, result_obj in enumerate(results):
