@@ -83,7 +83,7 @@ class CacheEngine:
     def _get_computation_object_data(identifier_or_type: str | type):
         # find the computation object
         computation_object = None
-        if (identifier_or_type is Void):
+        if (identifier_or_type is Void or identifier_or_type is None):
             return Void
         elif isinstance(identifier_or_type, str):
             computation_object = CacheEngine._computation_object_dict[identifier_or_type]
