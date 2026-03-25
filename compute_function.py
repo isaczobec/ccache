@@ -24,8 +24,12 @@ class Out:
     """
     Class for output arguments to a compute function
     """
-    def __init__(self, out_type):
-        self.out_type = out_type
+    def __init__(self, *out_types):
+        self.out_types = out_types
+        if len(out_types) > 1:
+            self.singleton_output = False
+        else:
+            self.singleton_output = True
 
 class ComputationFunction:
     def __init__(
@@ -33,10 +37,10 @@ class ComputationFunction:
             func_name: str,
             func: callable,
             inputs: list[ComputationObjectData], 
-            output: ComputationObjectData
+            outputs: list[ComputationObjectData]
             ):
         self.func = func
         self.func_name = func_name
         self.inputs = inputs
-        self.output = output
+        self.output = outputs
 

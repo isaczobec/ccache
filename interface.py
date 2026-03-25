@@ -264,22 +264,29 @@ class ExecCommand(Command):
         if "arg" in kw_args:
             normal_args = kw_args["arg"]
 
-        res_obj = None
+        results = None
         try:
-            res_obj = CacheEngine.perform_computation_function(func_name, input_computation_objects, normal_args)
+            results = CacheEngine.perform_computation_function(func_name, input_computation_objects, normal_args)
         except Exception as e:
             CacheInterface.error(f"Error while performing {func_name}: {e}")
-            raise e
-    
-        if res_obj is None: return
+            raise e    
+
+        if results is None: return
         
-        uid = CacheEngine.save_object(res_obj)
-        print(f"Saved resulting object with uid {uid[0:9]}...")
+        # save all outputs
+        for i, result_obj in enumerate(results):
+            uid = CacheEngine.save_object(result_obj)
+            print(f"Saved output {i} of type {CacheEngine._get_computation_object_data(type(result_obj)).object_identifier} with uid {uid[0:9]}...")
 
         if "set" in kw_args:
-            varname = kw_args["set"][0]
-            CoVars.add_co_ref(varname, res_obj)
-            print(f"Stored the result in {varname}!")
+
+            if len(kw_args["set"]) != len(results):
+                CacheInterface.error(f"The set keyword did not have the same amount of arguments as the amount of function outputs! Expected {len(results)} but got {len(kw_args["set"])}")
+                return
+            
+            for i,varname in enumerate(kw_args["set"]):
+                CoVars.add_co_ref(varname, results[i])
+                print(f"Stored result {i} in {varname}!")
 
 class PythonCommand(Command):
 
@@ -404,12 +411,12 @@ class ListComputationFunctionsCommand(Command):
                 for p in normal_params
             )
 
-            out_type = comp_func.output.object_identifier if not comp_func.output is Void else "Void"
+            out_types = ", ".join([output.object_identifier for output in comp_func.output])
 
             print(f"\n{name}")
             print(f"  inputs : {', '.join(input_types)}")
             print(f"  args   : ({normal_args})")
-            print(f"  output : {out_type}")
+            print(f"  output : {out_types}")
 
 class HelpCommand(Command):
 

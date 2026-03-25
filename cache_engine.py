@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 import inspect
 from typing import Any, Callable
+
+from .helpers import is_iterable
 from .computation_object_data import ComputationObjectData
 from .computation_object_metadata import ComputationObjectMetadata
 from .compute_function import In, Out, ComputationFunction, Void
@@ -173,17 +175,17 @@ class CacheEngine:
     @staticmethod
     def start():
         # populate the computation function dict
-        for func_name, (func, inputs, output) in CacheEngine._computation_function_pre_dict.items():
+        for func_name, (func, inputs, outputs) in CacheEngine._computation_function_pre_dict.items():
             # get all inputs computation object datas
             input_datas = [CacheEngine._get_computation_object_data(in_type) for in_type in inputs.in_types]
 
-            output_data = CacheEngine._get_computation_object_data(output.out_type)
+            output_datas = [CacheEngine._get_computation_object_data(out_type) for out_type in outputs.out_types]
 
             CacheEngine._computation_function_dict[func_name] = ComputationFunction(
                 func_name,
                 func,
                 input_datas,
-                output_data
+                output_datas
                 )
             
     @staticmethod
@@ -235,15 +237,34 @@ class CacheEngine:
                 raise TypeError(f"Could not cast {arg} as type {annotation}: {e}") from e
 
         # call the function
-        result_obj = comp_func.func(*input_objects, *cast_normal_args)
+        # results may or may not be a tuple
+        results = comp_func.func(*input_objects, *cast_normal_args)
+
+        # ensure result is iterable
+        if not is_iterable(results):
+            results = [results]
 
         # check that the result is a computation object with correct type
-        if comp_func.output is not Void:
-            result_obj_data = CacheEngine._get_computation_object_data(type(result_obj))
-            if result_obj_data != comp_func.output:
-                raise ValueError(f"The type of the result of the function {func_name} was incorrect; excpected {comp_func.output.object_identifier} but got {result_obj_data.object_identifier}!")
+        # case with multiple outputs
+        if len(comp_func.output) > 1:
+            for i,output_type in enumerate(comp_func.output):
+            
+                res_obj = results[i]
 
-        return result_obj
+                result_obj_data = CacheEngine._get_computation_object_data(type(res_obj))
+                if result_obj_data != output_type:
+                    raise ValueError(f"The type of the result of the function {func_name} was incorrect; excpected {[f"{out.object_identifier}, " for out in comp_func.output]} but got a {result_obj_data.object_identifier} for output {i}!")
+
+
+        # case with single output
+        elif results[0] is not Void:
+            res_obj = results[0]
+            output_type = comp_func.output[0]
+            result_obj_data = CacheEngine._get_computation_object_data(type(res_obj))
+            if result_obj_data != output_type:
+                raise ValueError(f"The type of the result of the function {func_name} was incorrect; excpected {output_type.object_identifier}  but got {result_obj_data.object_identifier}!")
+            
+        return results
 
 def check_saveload_func_signature(func):
     # verify that the method signature is correct
